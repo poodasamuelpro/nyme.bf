@@ -3,14 +3,14 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import * as brevo from 'brevo'
+import * as brevo from 'brevo'  // ✅ CORRECT - utilise le package 'brevo' installé
 
 const EMAIL_TO = 'contact@nyme.app'
 const EMAIL_FROM = 'NYME <noreply@nyme.app>'
 const EMAIL_FROM_NAME = 'NYME'
 const EMAIL_FROM_ADDRESS = 'noreply@nyme.app'
 
-// Templates HTML (à garder identiques)
+// Templates HTML (les mêmes)
 const getAdminEmailHTML = (nom: string, email: string, sujet: string, message: string) => `
   <div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#0A0F1E;color:#F9FAFB;padding:32px;border-radius:16px">
     <div style="text-align:center;margin-bottom:24px">
@@ -94,7 +94,7 @@ const sendWithResend = async (to: string, subject: string, html: string, replyTo
   })
 }
 
-// Fonction pour envoyer via Brevo
+// Fonction pour envoyer via Brevo (avec le bon package)
 const sendWithBrevo = async (to: string, subject: string, html: string, replyTo?: string) => {
   const apiInstance = new brevo.TransactionalEmailsApi()
   apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY!)
@@ -116,7 +116,6 @@ const sendWithBrevo = async (to: string, subject: string, html: string, replyTo?
 const sendEmailsWithFallback = async (adminData: any, userData: any) => {
   const { adminTo, adminSubject, adminHtml, adminReplyTo, userTo, userSubject, userHtml } = adminData
   
-  let usedService = 'none'
   let lastError = null
 
   // ESSAYER RESEND EN PRIORITÉ
@@ -132,9 +131,7 @@ const sendEmailsWithFallback = async (adminData: any, userData: any) => {
     } catch (error: any) {
       console.error('❌ Resend a échoué:', error.message)
       lastError = error
-      usedService = 'resend-failed'
       
-      // Vérifier si c'est une erreur de crédits/quota
       if (error.message?.includes('quota') || error.message?.includes('credit') || error.message?.includes('rate')) {
         console.log('⚠️ Problème de crédits Resend, fallback vers Brevo...')
       } else {
@@ -160,7 +157,7 @@ const sendEmailsWithFallback = async (adminData: any, userData: any) => {
   }
 
   // AUCUN SERVICE DISPONIBLE
-  if (usedService === 'resend-failed' && !process.env.BREVO_API_KEY) {
+  if (lastError && !process.env.BREVO_API_KEY) {
     throw new Error('Resend a échoué et Brevo n\'est pas configuré')
   }
   
@@ -217,12 +214,11 @@ export async function POST(req: Request) {
       {}
     )
 
-    // Retourner une réponse indiquant le service utilisé (optionnel)
     return NextResponse.json(
       { 
         success: true, 
         message: 'Votre message a bien été envoyé.',
-        service: result.service // 'resend' ou 'brevo-fallback'
+        service: result.service
       },
       { status: 200 }
     )
