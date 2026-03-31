@@ -16,7 +16,7 @@
     "lucide-react": "^0.383.0",
     "clsx": "^2.1.1",
     "resend": "^6.9.4",
-    "brevo": "^1.0.0"
+    "@getbrevo/brevo": "^1.0.1"
   },
   "devDependencies": {
     "@types/node": "^20",
