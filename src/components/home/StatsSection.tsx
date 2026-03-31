@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react' 
 
 const stats = [
   { value: '30 min', label: 'Délai moyen de livraison', emoji: '⚡', num: 30, suffix: ' min' },
