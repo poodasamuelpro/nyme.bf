@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react' 
 
 const methods = [
   { emoji: '💵', name: 'Cash', desc: 'Payez à la livraison', color: 'from-green-500/20 to-green-500/5', border: 'border-green-500/30', glow: 'shadow-green-500/20' },
