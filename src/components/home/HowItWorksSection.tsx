@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react' 
 
 const steps = [
   { step: '01', emoji: '📍', title: 'Saisissez départ & arrivée', desc: 'Indiquez d\'où part votre colis et où il doit aller. L\'app calcule le prix automatiquement en secondes.' },
