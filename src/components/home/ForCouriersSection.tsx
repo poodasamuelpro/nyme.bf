@@ -171,4 +171,4 @@ export default function ForCouriersSection() {
       </div>
     </section>
   )
-}p
+}
