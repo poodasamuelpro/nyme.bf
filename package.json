@@ -15,7 +15,7 @@
     "framer-motion": "^11.2.10",
     "lucide-react": "^0.383.0",
     "clsx": "^2.1.1",
-    "resend": "^1.2.0",
+    "resend": "^0.3.1",
     "brevo": "^1.0.0"
   },
   "devDependencies": {
