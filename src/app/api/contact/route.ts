@@ -3,14 +3,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import * as brevo from '@getbrevo/brevo'  // ✅ CORRECT - utilise le package 'brevo' installé
 
 const EMAIL_TO = 'contact@nyme.app'
 const EMAIL_FROM = 'NYME <noreply@nyme.app>'
-const EMAIL_FROM_NAME = 'NYME'
-const EMAIL_FROM_ADDRESS = 'noreply@nyme.app'
 
-// Templates HTML (les mêmes)
+// Templates HTML (inchangés)
 const getAdminEmailHTML = (nom: string, email: string, sujet: string, message: string) => `
   <div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#0A0F1E;color:#F9FAFB;padding:32px;border-radius:16px">
     <div style="text-align:center;margin-bottom:24px">
@@ -82,88 +79,6 @@ const getUserEmailHTML = (nom: string, sujet: string, message: string) => `
   </div>
 `
 
-// Fonction pour envoyer via Resend
-const sendWithResend = async (to: string, subject: string, html: string, replyTo?: string) => {
-  const resend = new Resend(process.env.RESEND_API_KEY!)
-  return await resend.emails.send({
-    from: EMAIL_FROM,
-    to,
-    replyTo: replyTo || undefined,
-    subject,
-    html,
-  })
-}
-
-// Fonction pour envoyer via Brevo (avec le bon package)
-const sendWithBrevo = async (to: string, subject: string, html: string, replyTo?: string) => {
-  const apiInstance = new brevo.TransactionalEmailsApi()
-  apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY!)
-  
-  const sendSmtpEmail = new brevo.SendSmtpEmail()
-  sendSmtpEmail.subject = subject
-  sendSmtpEmail.htmlContent = html
-  sendSmtpEmail.sender = { name: EMAIL_FROM_NAME, email: EMAIL_FROM_ADDRESS }
-  sendSmtpEmail.to = [{ email: to, name: to.split('@')[0] }]
-  
-  if (replyTo) {
-    sendSmtpEmail.replyTo = { email: replyTo, name: replyTo.split('@')[0] }
-  }
-  
-  return await apiInstance.sendTransacEmail(sendSmtpEmail)
-}
-
-// Fonction principale d'envoi avec fallback
-const sendEmailsWithFallback = async (adminData: any, userData: any) => {
-  const { adminTo, adminSubject, adminHtml, adminReplyTo, userTo, userSubject, userHtml } = adminData
-  
-  let lastError = null
-
-  // ESSAYER RESEND EN PRIORITÉ
-  if (process.env.RESEND_API_KEY) {
-    try {
-      console.log('📧 Tentative d\'envoi avec Resend...')
-      await Promise.all([
-        sendWithResend(adminTo, adminSubject, adminHtml, adminReplyTo),
-        sendWithResend(userTo, userSubject, userHtml)
-      ])
-      console.log('✅ Envoi réussi avec Resend')
-      return { success: true, service: 'resend' }
-    } catch (error: any) {
-      console.error('❌ Resend a échoué:', error.message)
-      lastError = error
-      
-      if (error.message?.includes('quota') || error.message?.includes('credit') || error.message?.includes('rate')) {
-        console.log('⚠️ Problème de crédits Resend, fallback vers Brevo...')
-      } else {
-        console.log('⚠️ Erreur Resend, tentative fallback vers Brevo...')
-      }
-    }
-  }
-
-  // FALLBACK VERS BREVO SI RESEND A ÉCHOUÉ
-  if (process.env.BREVO_API_KEY) {
-    try {
-      console.log('📧 Fallback: Tentative d\'envoi avec Brevo...')
-      await Promise.all([
-        sendWithBrevo(adminTo, adminSubject, adminHtml, adminReplyTo),
-        sendWithBrevo(userTo, userSubject, userHtml)
-      ])
-      console.log('✅ Envoi réussi avec Brevo (fallback)')
-      return { success: true, service: 'brevo-fallback' }
-    } catch (error: any) {
-      console.error('❌ Brevo a également échoué:', error.message)
-      throw new Error(`Les deux services ont échoué. Resend: ${lastError?.message}, Brevo: ${error.message}`)
-    }
-  }
-
-  // AUCUN SERVICE DISPONIBLE
-  if (lastError && !process.env.BREVO_API_KEY) {
-    throw new Error('Resend a échoué et Brevo n\'est pas configuré')
-  }
-  
-  throw new Error('Aucun service email configuré')
-}
-
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -184,9 +99,9 @@ export async function POST(req: Request) {
       )
     }
 
-    // Vérifier qu'au moins un service est configuré
-    if (!process.env.RESEND_API_KEY && !process.env.BREVO_API_KEY) {
-      console.warn('⚠️ Aucune clé API configurée - Mode simulation')
+    // Vérifier que Resend est configuré (sinon mode simulation)
+    if (!process.env.RESEND_API_KEY) {
+      console.warn('⚠️ RESEND_API_KEY non configurée - Mode simulation')
       return NextResponse.json(
         { 
           success: true, 
@@ -197,35 +112,39 @@ export async function POST(req: Request) {
       )
     }
 
+    const resend = new Resend(process.env.RESEND_API_KEY)
+
     const adminHtml = getAdminEmailHTML(nom, email, sujet, message)
     const userHtml = getUserEmailHTML(nom, sujet, message)
 
-    // Envoi des emails avec fallback automatique
-    const result = await sendEmailsWithFallback(
-      {
-        adminTo: EMAIL_TO,
-        adminSubject: `[NYME Contact] ${sujet} — ${nom}`,
-        adminHtml: adminHtml,
-        adminReplyTo: email,
-        userTo: email,
-        userSubject: `✅ Message reçu — NYME vous répondra sous 24h`,
-        userHtml: userHtml,
-      },
-      {}
-    )
+    // Envoi des deux emails en parallèle
+    await Promise.all([
+      resend.emails.send({
+        from: EMAIL_FROM,
+        to: EMAIL_TO,
+        replyTo: email,
+        subject: `[NYME Contact] ${sujet} — ${nom}`,
+        html: adminHtml,
+      }),
+      resend.emails.send({
+        from: EMAIL_FROM,
+        to: email,
+        subject: `✅ Message reçu — NYME vous répondra sous 24h`,
+        html: userHtml,
+      })
+    ])
 
     return NextResponse.json(
       { 
         success: true, 
-        message: 'Votre message a bien été envoyé.',
-        service: result.service
+        message: 'Votre message a bien été envoyé.'
       },
       { status: 200 }
     )
 
   } catch (err: any) {
     console.error('Erreur envoi email:', err)
-    
+
     return NextResponse.json(
       { 
         error: 'Erreur lors de l\'envoi du message', 
