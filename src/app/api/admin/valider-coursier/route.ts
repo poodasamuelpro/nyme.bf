@@ -1,6 +1,6 @@
 // src/app/api/admin/valider-coursier/route.ts
 // Valide ou rejette les documents d'un coursier
-// Admin seulement
+// Admin seulement 
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
