@@ -23,13 +23,18 @@ export default function PartenairesLoginPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/partenaires/dashboard')
+      if (session) {
+        // Vérifier si c'est bien un partenaire
+        supabase.from('partenaires').select('id').eq('user_id', session.user.id).single()
+          .then(({ data }) => {
+            if (data) router.replace('/partenaires/dashboard')
+          })
+      }
     })
   }, [router])
 
   const reset = () => { setError(''); setSuccess('') }
 
-  // ── Connexion ─────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); reset()
@@ -41,14 +46,12 @@ export default function PartenairesLoginPage() {
         throw new Error(
           authErr.message.includes('Invalid login credentials')
             ? 'Email ou mot de passe incorrect'
-            : authErr.message.includes('Email not confirmed')
-            ? 'Email non confirmé. Contactez nyme.contact@gmail.com'
             : authErr.message
         )
       }
       if (!data.session) throw new Error('Connexion échouée, réessayez')
 
-      // Vérifier que c'est bien un partenaire (pas un client ou coursier)
+      // Vérifier le compte partenaire
       const { data: part, error: partErr } = await supabase
         .from('partenaires')
         .select('id, statut')
@@ -57,11 +60,11 @@ export default function PartenairesLoginPage() {
 
       if (partErr || !part) {
         await supabase.auth.signOut()
-        throw new Error('Aucun compte partenaire trouvé. Contactez nyme.contact@gmail.com')
+        throw new Error('Aucun compte partenaire trouvé. Veuillez vous inscrire.')
       }
-      if (part.statut === 'suspendu') {
+      if (part.statut === 'suspendu' || part.statut === 'rejete') {
         await supabase.auth.signOut()
-        throw new Error('Compte suspendu. Contactez nyme.contact@gmail.com')
+        throw new Error('Compte suspendu ou rejeté. Contactez le support.')
       }
 
       setSuccess('Connexion réussie ! Redirection...')
@@ -74,7 +77,6 @@ export default function PartenairesLoginPage() {
     }
   }
 
-  // ── Inscription — rôle FORCÉ à "partenaire" ───────────────────
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); reset()
@@ -83,16 +85,9 @@ export default function PartenairesLoginPage() {
       setError('Mot de passe : minimum 8 caractères')
       setLoading(false); return
     }
-    if (!entreprise.trim()) {
-      setError('Nom de l\'entreprise obligatoire')
-      setLoading(false); return
-    }
-    if (!nomContact.trim()) {
-      setError('Nom du contact obligatoire')
-      setLoading(false); return
-    }
 
     try {
+      // 1. Créer le compte Supabase Auth avec le rôle partenaire dans les metadata
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
@@ -100,37 +95,17 @@ export default function PartenairesLoginPage() {
           data: {
             role: 'partenaire',
             nom: nomContact.trim(),
+            telephone: telephone.trim() || null,
           },
         },
       })
 
-      if (authErr) {
-        throw new Error(
-          authErr.message.includes('already registered')
-            ? 'Cet email est déjà utilisé. Connectez-vous.'
-            : authErr.message
-        )
-      }
+      if (authErr) throw new Error(authErr.message)
       if (!authData.user) throw new Error('Erreur lors de la création du compte')
 
       const userId = authData.user.id
 
-      const { error: userErr } = await supabase
-        .from('utilisateurs')
-        .upsert({
-          id:          userId,
-          nom:         nomContact.trim(),
-          telephone:   telephone.trim() || null,
-          email:       email.trim().toLowerCase(),
-          role:        'partenaire',
-          est_verifie: false,
-          est_actif:   true,
-          created_at:  new Date().toISOString(),
-          updated_at:  new Date().toISOString(),
-        }, { onConflict: 'id' })
-
-      if (userErr) console.warn('[signup] upsert utilisateur:', userErr.message)
-
+      // 2. Créer le profil partenaire (le trigger handle_new_user s'occupe de la table utilisateurs)
       const { error: partErr } = await supabase
         .from('partenaires')
         .insert({
@@ -145,19 +120,13 @@ export default function PartenairesLoginPage() {
           livraisons_mois: 0,
           taux_commission: 12.0,
           date_debut:      new Date().toISOString(),
-          created_at:      new Date().toISOString(),
-          updated_at:      new Date().toISOString(),
         })
 
-      if (partErr) throw new Error('Erreur profil partenaire. Contactez le support.')
+      if (partErr) throw new Error('Erreur lors de la création du profil partenaire.')
 
-      if (authData.session) {
-        setSuccess('Compte créé ! En attente de validation (24-48h)...')
-        setTimeout(() => router.push('/partenaires/dashboard'), 1500)
-      } else {
-        setSuccess('Compte créé ! Connectez-vous maintenant.')
-        setMode('login'); setPassword('')
-      }
+      setSuccess('🎉 Compte créé avec succès ! Votre demande est en cours de validation par l\'administration.')
+      setMode('login')
+      setPassword('')
 
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription')
@@ -166,7 +135,6 @@ export default function PartenairesLoginPage() {
     }
   }
 
-  // ── Reset mot de passe ────────────────────────────────────────
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) { setError('Entrez votre email'); return }
@@ -184,53 +152,60 @@ export default function PartenairesLoginPage() {
   }
 
   return (
-    <div className="min-h-screen section-hero flex items-center justify-center p-4">
-      {/* Fond déco */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-10 left-10 w-72 h-72 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute bottom-10 right-10 w-96 h-96 rounded-full bg-nyme-orange/10 blur-3xl" />
-        <div className="absolute inset-0 opacity-[0.04]"
-          style={{backgroundImage:'radial-gradient(circle, white 1px, transparent 1px)',backgroundSize:'40px 40px'}} />
-      </div>
-
+    <div className="min-h-screen bg-[#0A2E8A] flex items-center justify-center p-4">
       <div className="relative w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-nyme-orange to-nyme-orange-light flex items-center justify-center shadow-nyme-orange">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#E87722] to-[#F59343] flex items-center justify-center shadow-lg">
               <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
             </div>
             <span className="font-heading text-2xl font-extrabold text-white tracking-wider">NYME</span>
           </Link>
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-nyme-orange/20 border border-nyme-orange/30">
-            <span className="text-nyme-orange text-sm font-semibold">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20">
+            <span className="text-[#F59343] text-sm font-semibold">
               {mode === 'reset' ? '🔐 Réinitialisation' : '⭐ Espace Partenaires'}
             </span>
           </div>
         </div>
 
-        {/* Carte */}
-        <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/15 shadow-nyme-lg">
-
-          {/* Reset */}
-          {mode === 'reset' && (
-            <form onSubmit={handleReset} className="space-y-4">
-              <h2 className="text-white font-heading font-bold text-lg mb-2">Réinitialiser le mot de passe</h2>
-              <Field icon={Mail} type="email" label="Email professionnel" value={email} onChange={setEmail} placeholder="vous@entreprise.com" />
-              <Messages error={error} success={success} />
-              <SubmitBtn loading={loading} label="Envoyer l'email de réinitialisation" />
-              <BackBtn onClick={() => { setMode('login'); reset() }} label="← Retour à la connexion" />
-            </form>
+        <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/15 shadow-2xl">
+          {success && (
+            <div className="mb-6 p-4 rounded-xl bg-green-500/20 border border-green-500/30 flex items-start gap-3 text-green-400 text-sm">
+              <CheckCircle2 size={18} className="shrink-0 mt-0.5"/>
+              <span>{success}</span>
+            </div>
           )}
 
-          {/* Login / Signup */}
-          {mode !== 'reset' && (
+          {error && (
+            <div className="mb-6 p-4 rounded-xl bg-red-500/20 border border-red-500/30 flex items-start gap-3 text-red-400 text-sm">
+              <AlertCircle size={18} className="shrink-0 mt-0.5"/>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {mode === 'reset' ? (
+            <form onSubmit={handleReset} className="space-y-4">
+              <div>
+                <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">Email professionnel</label>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@entreprise.com"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#E87722] to-[#F59343] text-white font-bold text-sm shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50">
+                {loading ? 'Envoi...' : 'Réinitialiser le mot de passe'}
+              </button>
+              <button type="button" onClick={() => { setMode('login'); reset() }} className="w-full text-white/50 text-xs hover:text-white transition-colors">
+                ← Retour à la connexion
+              </button>
+            </form>
+          ) : (
             <>
-              {/* Tabs */}
-              <div className="flex rounded-xl bg-white/8 p-1 mb-6">
+              <div className="flex rounded-xl bg-white/5 p-1 mb-6">
                 {(['login','signup'] as Mode[]).map(m => (
                   <button key={m} onClick={() => { setMode(m); reset() }}
-                    className={`flex-1 py-2.5 rounded-lg text-sm font-semibold font-body transition-all ${mode===m ? 'bg-nyme-orange text-white shadow-nyme-orange' : 'text-white/55 hover:text-white'}`}>
+                    className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode===m ? 'bg-[#E87722] text-white shadow-lg' : 'text-white/50 hover:text-white'}`}>
                     {m === 'login' ? 'Se connecter' : 'S\'inscrire'}
                   </button>
                 ))}
@@ -239,118 +214,75 @@ export default function PartenairesLoginPage() {
               <form onSubmit={mode==='login' ? handleLogin : handleSignup} className="space-y-4">
                 {mode === 'signup' && (
                   <>
-                    <Field icon={Building2} type="text" label="Nom de l'entreprise *" value={entreprise} onChange={setEntreprise} placeholder="Ma Boutique SARL" />
-                    <Field icon={User} type="text" label="Votre nom complet *" value={nomContact} onChange={setNomContact} placeholder="Jean Dupont" />
-                    <Field icon={Phone} type="tel" label="Téléphone (optionnel)" value={telephone} onChange={setTelephone} placeholder="+226 70 00 00 00" />
+                    <div>
+                      <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">Nom de l'entreprise *</label>
+                      <div className="relative">
+                        <Building2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input type="text" required value={entreprise} onChange={e => setEntreprise(e.target.value)} placeholder="Ma Boutique SARL"
+                          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">Votre nom complet *</label>
+                      <div className="relative">
+                        <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input type="text" required value={nomContact} onChange={e => setNomContact(e.target.value)} placeholder="Jean Dupont"
+                          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">Téléphone (optionnel)</label>
+                      <div className="relative">
+                        <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input type="tel" value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="+226 70 00 00 00"
+                          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                      </div>
+                    </div>
                   </>
                 )}
 
-                <Field icon={Mail} type="email" label="Email professionnel *" value={email} onChange={setEmail} placeholder="vous@entreprise.com" />
-
-                {/* Champ mot de passe avec œil visible et fonctionnel */}
                 <div>
-                  <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">
-                    Mot de passe *{mode==='signup' && <span className="normal-case text-white/40 ml-1">(min. 8 caractères)</span>}
+                  <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">Email professionnel *</label>
+                  <div className="relative">
+                    <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                    <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@entreprise.com"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5">
+                    Mot de passe * {mode==='signup' && <span className="normal-case text-white/30 ml-1">(min. 8)</span>}
                   </label>
                   <div className="relative">
                     <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
-                    <input 
-                      type={showPw ? 'text' : 'password'} 
-                      required 
-                      minLength={mode==='signup'?8:1}
-                      value={password} 
-                      onChange={e => setPassword(e.target.value)} 
-                      placeholder="••••••••"
-                      className="w-full pl-10 pr-12 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-nyme-orange focus:ring-1 focus:ring-nyme-orange/50 transition-all font-body text-base" 
-                    />
-                    <button 
-                      type="button" 
-                      onClick={() => setShowPw(!showPw)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-nyme-orange transition-colors"
-                    >
+                    <input type={showPw ? 'text' : 'password'} required minLength={mode==='signup'?8:1} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
+                      className="w-full pl-10 pr-12 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-[#E87722] transition-all" />
+                    <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
                       {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                 </div>
 
-                {mode === 'signup' && (
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs font-body">
-                    ℹ️ Votre compte sera validé par notre équipe sous 24-48h. Vous pouvez déjà accéder à votre dashboard en attendant.
+                {mode === 'login' && (
+                  <div className="text-right">
+                    <button type="button" onClick={() => setMode('reset')} className="text-white/50 text-xs hover:text-[#F59343] transition-colors">
+                      Mot de passe oublié ?
+                    </button>
                   </div>
                 )}
 
-                <Messages error={error} success={success} />
-                <SubmitBtn loading={loading} label={mode==='login' ? 'Accéder au dashboard' : 'Créer mon compte'} />
-                {mode==='login' && <BackBtn onClick={() => { setMode('reset'); reset() }} label="Mot de passe oublié ?" />}
+                <button type="submit" disabled={loading} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#E87722] to-[#F59343] text-white font-bold text-sm shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50">
+                  {loading ? 'Patientez...' : mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
+                </button>
               </form>
             </>
           )}
-
-          <div className="mt-6 pt-5 border-t border-white/8 text-center space-y-1">
-            <p className="text-white/40 text-xs font-body">
-              Pas encore partenaire ?{' '}
-              <Link href="/partenaires#abonnements" className="text-nyme-orange hover:underline font-semibold">
-                Voir les offres →
-              </Link>
-            </p>
-            <p className="text-white/30 text-xs font-body">
-              Support : <a href="mailto:nyme.contact@gmail.com" className="text-white/50 hover:text-nyme-orange transition-colors">nyme.contact@gmail.com</a>
-            </p>
-          </div>
         </div>
-
-        <p className="text-center text-white/20 text-xs font-body mt-6">
-          © {new Date().getFullYear()} NYME · Ouagadougou, Burkina Faso
+        <p className="text-center text-white/30 text-xs mt-8 font-body">
+          © {new Date().getFullYear()} NYME — Service de livraison professionnel
         </p>
       </div>
     </div>
-  )
-}
-
-// ── Sous-composants ────────────────────────────────────────────────
-function Field({ icon: Icon, type, label, value, onChange, placeholder }: {
-  icon: React.ElementType; type: string; label: string
-  value: string; onChange: (v: string) => void; placeholder: string
-}) {
-  return (
-    <div>
-      <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">{label}</label>
-      <div className="relative">
-        <Icon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
-        <input 
-          type={type} 
-          value={value} 
-          onChange={e => onChange(e.target.value)} 
-          placeholder={placeholder}
-          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-nyme-orange focus:ring-1 focus:ring-nyme-orange/50 transition-all font-body text-base" 
-        />
-      </div>
-    </div>
-  )
-}
-
-function Messages({ error, success }: { error: string; success: string }) {
-  return (
-    <>
-      {error && <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-sm font-body flex items-start gap-2"><AlertCircle size={16} className="shrink-0 mt-0.5"/>{error}</div>}
-      {success && <div className="p-3 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-sm font-body flex items-start gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5"/>{success}</div>}
-    </>
-  )
-}
-
-function SubmitBtn({ loading, label }: { loading: boolean; label: string }) {
-  return (
-    <button type="submit" disabled={loading}
-      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-nyme-orange to-nyme-orange-light text-white font-bold text-sm font-body flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:brightness-105 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-      {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span className="ml-2">Chargement...</span></> : <>{label}<ArrowRight size={14}/></>}
-    </button>
-  )
-}
-
-function BackBtn({ onClick, label }: { onClick: () => void; label: string }) {
-  return (
-    <button type="button" onClick={onClick} className="w-full text-center text-white/40 text-xs font-body hover:text-nyme-orange transition-colors pt-1">
-      {label}
-    </button>
   )
 }
