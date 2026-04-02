@@ -64,7 +64,11 @@ export default function PartenairesLoginPage() {
       if (authErr) throw authErr
       setSuccess('Vérifiez votre boîte email pour confirmer votre compte.')
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de l\'inscription.')
+      if (err.message?.includes('already registered')) {
+        setError("Cet email est déjà utilisé. Connectez-vous plutôt.")
+      } else {
+        setError(err.message || 'Erreur lors de l\'inscription.')
+      }
     } finally {
       setLoading(false)
     }
