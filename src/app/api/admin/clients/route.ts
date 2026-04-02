@@ -1,4 +1,4 @@
-// src/app/api/admin/clients/route.ts
+// src/app/api/admin/clients/route.ts 
 // Gestion des clients — liste et toggle actif/inactif
 
 import { NextResponse } from 'next/server'
