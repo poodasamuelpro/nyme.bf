@@ -60,7 +60,10 @@ export async function POST(req: Request) {
           titre: '💰 Paiement reçu',
           message: `Vous avez reçu ${Number(montant).toLocaleString('fr-FR')} FCFA. ${description || ''}`.trim(),
           lu: false, created_at: new Date().toISOString(),
-        }).catch(() => {})
+        // ✅ Correction
+}).catch(error => {
+  console.error('Erreur:', error)
+})
         return NextResponse.json({ success: true, message: `Paiement de ${montant} FCFA effectué pour ${utilisateur.nom}`, transaction_id: txId })
       }
     } catch {}
