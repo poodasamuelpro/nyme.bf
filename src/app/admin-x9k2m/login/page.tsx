@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Zap, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react'
+import { Zap, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react' 
 
 // Route secrète : /admin-x9k2m/login
 // Ne pas indexer, ne pas mentionner dans le header/footer public
