@@ -75,8 +75,6 @@ export default function PartenairesLoginPage() {
   }
 
   // ── Inscription — rôle FORCÉ à "partenaire" ───────────────────
-  // Cette page est UNIQUEMENT pour les partenaires.
-  // Le rôle 'partenaire' est inséré en dur, jamais modifiable par l'utilisateur.
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); reset()
@@ -95,13 +93,12 @@ export default function PartenairesLoginPage() {
     }
 
     try {
-      // 1. Créer le compte Supabase Auth
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
         options: {
           data: {
-            role: 'partenaire',   // Metadata auth — informatif
+            role: 'partenaire',
             nom: nomContact.trim(),
           },
         },
@@ -118,9 +115,6 @@ export default function PartenairesLoginPage() {
 
       const userId = authData.user.id
 
-      // 2. Insérer dans la table "utilisateurs" avec rôle = 'partenaire' FORCÉ
-      // Le trigger handle_new_user() le fait aussi automatiquement,
-      // mais on upsert pour s'assurer du rôle correct
       const { error: userErr } = await supabase
         .from('utilisateurs')
         .upsert({
@@ -128,7 +122,7 @@ export default function PartenairesLoginPage() {
           nom:         nomContact.trim(),
           telephone:   telephone.trim() || null,
           email:       email.trim().toLowerCase(),
-          role:        'partenaire',  // ← FORCÉ — jamais 'client', 'coursier' ou 'admin'
+          role:        'partenaire',
           est_verifie: false,
           est_actif:   true,
           created_at:  new Date().toISOString(),
@@ -137,7 +131,6 @@ export default function PartenairesLoginPage() {
 
       if (userErr) console.warn('[signup] upsert utilisateur:', userErr.message)
 
-      // 3. Créer le profil partenaire
       const { error: partErr } = await supabase
         .from('partenaires')
         .insert({
@@ -147,7 +140,7 @@ export default function PartenairesLoginPage() {
           telephone:       telephone.trim() || null,
           email_pro:       email.trim().toLowerCase(),
           plan:            'starter',
-          statut:          'en_attente',  // Admin valide manuellement
+          statut:          'en_attente',
           livraisons_max:  30,
           livraisons_mois: 0,
           taux_commission: 12.0,
@@ -158,7 +151,6 @@ export default function PartenairesLoginPage() {
 
       if (partErr) throw new Error('Erreur profil partenaire. Contactez le support.')
 
-      // 4. Connexion auto si session disponible (email confirm désactivé dans Supabase)
       if (authData.session) {
         setSuccess('Compte créé ! En attente de validation (24-48h)...')
         setTimeout(() => router.push('/partenaires/dashboard'), 1500)
@@ -255,24 +247,34 @@ export default function PartenairesLoginPage() {
 
                 <Field icon={Mail} type="email" label="Email professionnel *" value={email} onChange={setEmail} placeholder="vous@entreprise.com" />
 
+                {/* Champ mot de passe avec œil visible et fonctionnel */}
                 <div>
-                  <label className="block text-white/60 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">
-                    Mot de passe *{mode==='signup' && <span className="normal-case text-white/30 ml-1">(min. 8 caractères)</span>}
+                  <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">
+                    Mot de passe *{mode==='signup' && <span className="normal-case text-white/40 ml-1">(min. 8 caractères)</span>}
                   </label>
                   <div className="relative">
-                    <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35" />
-                    <input type={showPw ? 'text' : 'password'} required minLength={mode==='signup'?8:1}
-                      value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-                      className="w-full pl-10 pr-10 py-3 rounded-xl bg-white/8 border border-white/15 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/60 focus:bg-white/12 transition-all font-body text-sm" />
-                    <button type="button" onClick={() => setShowPw(!showPw)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35 hover:text-white transition-colors">
-                      {showPw ? <EyeOff size={14}/> : <Eye size={14}/>}
+                    <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+                    <input 
+                      type={showPw ? 'text' : 'password'} 
+                      required 
+                      minLength={mode==='signup'?8:1}
+                      value={password} 
+                      onChange={e => setPassword(e.target.value)} 
+                      placeholder="••••••••"
+                      className="w-full pl-10 pr-12 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-nyme-orange focus:ring-1 focus:ring-nyme-orange/50 transition-all font-body text-base" 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowPw(!showPw)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-nyme-orange transition-colors"
+                    >
+                      {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                 </div>
 
                 {mode === 'signup' && (
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-white/55 text-xs font-body">
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs font-body">
                     ℹ️ Votre compte sera validé par notre équipe sous 24-48h. Vous pouvez déjà accéder à votre dashboard en attendant.
                   </div>
                 )}
@@ -312,11 +314,16 @@ function Field({ icon: Icon, type, label, value, onChange, placeholder }: {
 }) {
   return (
     <div>
-      <label className="block text-white/60 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">{label}</label>
+      <label className="block text-white/70 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">{label}</label>
       <div className="relative">
-        <Icon size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35" />
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/8 border border-white/15 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/60 focus:bg-white/12 transition-all font-body text-sm" />
+        <Icon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
+        <input 
+          type={type} 
+          value={value} 
+          onChange={e => onChange(e.target.value)} 
+          placeholder={placeholder}
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-nyme-orange focus:ring-1 focus:ring-nyme-orange/50 transition-all font-body text-base" 
+        />
       </div>
     </div>
   )
@@ -325,8 +332,8 @@ function Field({ icon: Icon, type, label, value, onChange, placeholder }: {
 function Messages({ error, success }: { error: string; success: string }) {
   return (
     <>
-      {error && <div className="p-3 rounded-xl bg-red-500/12 border border-red-500/25 text-red-400 text-sm font-body flex items-start gap-2"><AlertCircle size={14} className="shrink-0 mt-0.5"/>{error}</div>}
-      {success && <div className="p-3 rounded-xl bg-green-500/12 border border-green-500/25 text-green-400 text-sm font-body flex items-start gap-2"><CheckCircle2 size={14} className="shrink-0 mt-0.5"/>{success}</div>}
+      {error && <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-sm font-body flex items-start gap-2"><AlertCircle size={16} className="shrink-0 mt-0.5"/>{error}</div>}
+      {success && <div className="p-3 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-sm font-body flex items-start gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5"/>{success}</div>}
     </>
   )
 }
@@ -334,15 +341,15 @@ function Messages({ error, success }: { error: string; success: string }) {
 function SubmitBtn({ loading, label }: { loading: boolean; label: string }) {
   return (
     <button type="submit" disabled={loading}
-      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-nyme-orange to-nyme-orange-light text-white font-bold text-sm font-body flex items-center justify-center gap-2 shadow-nyme-orange hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-      {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Chargement...</> : <>{label}<ArrowRight size={14}/></>}
+      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-nyme-orange to-nyme-orange-light text-white font-bold text-sm font-body flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:brightness-105 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+      {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span className="ml-2">Chargement...</span></> : <>{label}<ArrowRight size={14}/></>}
     </button>
   )
 }
 
 function BackBtn({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button type="button" onClick={onClick} className="w-full text-center text-white/40 text-xs font-body hover:text-white/70 transition-colors pt-1">
+    <button type="button" onClick={onClick} className="w-full text-center text-white/40 text-xs font-body hover:text-nyme-orange transition-colors pt-1">
       {label}
     </button>
   )
