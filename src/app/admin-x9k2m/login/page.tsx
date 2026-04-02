@@ -1,26 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Zap, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react'
 
 export default function AdminLoginPage() {
-  const router = useRouter()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
 
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: u } = await supabase.from('utilisateurs').select('role').eq('id', session.user.id).single()
-      // ✅ window.location.href pour cohérence avec le middleware cookie
-      if (u?.role === 'admin') window.location.href = '/admin-x9k2m/dashboard'
-    })
-  }, [router])
+  // ✅ useEffect de vérification session SUPPRIMÉ intentionnellement.
+  // Il causait une boucle infinie : session détectée → window.location.href /dashboard
+  // → middleware intercepte → parfois redirige encore → boucle.
+  // Pas besoin : si l'admin est déjà connecté et va sur /admin-x9k2m/login,
+  // il peut juste se reloguer. Pas de redirection automatique ici.
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,10 +40,8 @@ export default function AdminLoginPage() {
         throw new Error('Compte désactivé.')
       }
 
-      // ✅ FIX CRITIQUE : window.location.href force un rechargement HTTP complet.
-      // router.push() est SPA → le cookie Supabase posé par signInWithPassword
-      // n'est pas encore propagé au middleware Next.js → session=null → redirect login.
-      // window.location.href envoie les cookies dans la requête HTTP → middleware OK.
+      // ✅ window.location.href force un rechargement HTTP complet.
+      // Le navigateur envoie le cookie Supabase → middleware lit la session → OK.
       window.location.href = '/admin-x9k2m/dashboard'
 
     } catch (err: any) {
@@ -80,6 +73,7 @@ export default function AdminLoginPage() {
               <label className="block text-white/60 text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Email</label>
               <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="admin@nyme.app"
+                autoComplete="email"
                 className="w-full px-4 py-3 rounded-xl bg-white/8 border border-white/15 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/60 focus:bg-white/12 transition-all font-body text-sm"/>
             </div>
             <div>
@@ -88,6 +82,7 @@ export default function AdminLoginPage() {
                 <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35"/>
                 <input type={showPw?'text':'password'} required value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   className="w-full pl-10 pr-10 py-3 rounded-xl bg-white/8 border border-white/15 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/60 focus:bg-white/12 transition-all font-body text-sm"/>
                 <button type="button" onClick={() => setShowPw(!showPw)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35 hover:text-white transition-colors">
