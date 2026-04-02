@@ -3,13 +3,19 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Route secrète admin — difficile à deviner
 const ADMIN_ROUTE = '/admin-x9k2m'
 
 export async function middleware(req: NextRequest) {
-  const res      = NextResponse.next()
+  const res = NextResponse.next()
+
+  // ✅ FIX CRITIQUE : createMiddlewareClient lit ET rafraîchit le cookie de session.
+  // Sans l'appel à getSession() ici, le cookie posé par signInWithPassword côté
+  // client n'est pas propagé dans la réponse → toutes les navigations suivantes
+  // voient session=null → boucle de redirection vers /login.
+  // Il FAUT appeler getSession() pour que le middleware synchronise le cookie.
   const supabase = createMiddlewareClient({ req, res })
   const { data: { session } } = await supabase.auth.getSession()
+
   const path = req.nextUrl.pathname
 
   // ── Protection dashboard partenaire ──────────────────────────
@@ -19,6 +25,9 @@ export async function middleware(req: NextRequest) {
       url.searchParams.set('redirect', path)
       return NextResponse.redirect(url)
     }
+    // Session présente → laisser passer en retournant `res`
+    // (important : retourner `res` et non NextResponse.next() pour conserver les cookies)
+    return res
   }
 
   // ── Redirection si déjà connecté (partenaire) ────────────────
@@ -31,8 +40,7 @@ export async function middleware(req: NextRequest) {
     if (!session) {
       return NextResponse.redirect(new URL(`${ADMIN_ROUTE}/login`, req.url))
     }
-    // Vérifier le rôle admin via cookie / header custom
-    // La vérification réelle est faite dans le composant
+    return res
   }
 
   // ── Redirection si déjà connecté (admin) ─────────────────────
