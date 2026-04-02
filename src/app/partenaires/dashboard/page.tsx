@@ -1,4 +1,4 @@
-'use client' 
+'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -217,7 +217,11 @@ export default function PartenaireDashboard() {
       return acc
     }, {} as Record<string,{livraisons:number;depenses:number;commissions:number}>)
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.replace('/partenaires/login') }
+  // ✅ FIX : window.location.href pour forcer rechargement complet et vider le cookie
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    window.location.href = '/partenaires/login'
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-nyme-bg flex items-center justify-center">
