@@ -1,29 +1,27 @@
 // src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-if (!SUPABASE_URL || !SUPABASE_ANON) {
+if (!URL || !ANON) {
   throw new Error('Variables NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY manquantes dans .env.local')
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+export const supabase = createClient(URL, ANON, {
   auth: {
     persistSession:     true,
     autoRefreshToken:   true,
     detectSessionInUrl: true,
-    // Pas de redirection email — désactiver aussi dans le dashboard Supabase :
-    // Authentication → Settings → Email Auth → décocher "Confirm email"
   },
 })
 
-// ── Types harmonisés avec la base de données NYME ──────────────
+// ── Types alignés avec le schéma NYME ─────────────────────────────
 
 export type UtilisateurRow = {
   id:           string
   nom:          string
-  telephone:    string
+  telephone:    string | null
   email:        string | null
   role:         'client' | 'coursier' | 'admin' | 'partenaire'
   avatar_url:   string | null
@@ -76,25 +74,20 @@ export type LivraisonPartenaireRow = {
   updated_at:       string
 }
 
-// ── Helper : récupérer le partenaire de l'utilisateur connecté ──
+// ── Helpers ────────────────────────────────────────────────────────
+
 export async function getPartenaire(userId: string): Promise<PartenaireRow | null> {
   const { data, error } = await supabase
     .from('partenaires')
     .select('*')
     .eq('user_id', userId)
     .single()
-
-  if (error) {
-    console.error('[Supabase] getPartenaire:', error.message)
-    return null
-  }
+  if (error) { console.error('[supabase] getPartenaire:', error.message); return null }
   return data
 }
 
-// ── Helper : récupérer les livraisons d'un partenaire ──────────
 export async function getLivraisonsPartenaire(
-  partenaireId: string,
-  limit = 50
+  partenaireId: string, limit = 100
 ): Promise<LivraisonPartenaireRow[]> {
   const { data, error } = await supabase
     .from('livraisons_partenaire')
@@ -102,10 +95,6 @@ export async function getLivraisonsPartenaire(
     .eq('partenaire_id', partenaireId)
     .order('created_at', { ascending: false })
     .limit(limit)
-
-  if (error) {
-    console.error('[Supabase] getLivraisonsPartenaire:', error.message)
-    return []
-  }
+  if (error) { console.error('[supabase] getLivraisons:', error.message); return [] }
   return data || []
 }
