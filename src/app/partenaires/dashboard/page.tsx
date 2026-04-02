@@ -1,8 +1,8 @@
-'use client' 
+'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, type PartenaireRow, type LivraisonPartenaire } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import {
   Package, TrendingUp, Clock, CheckCircle, XCircle,
   Zap, LogOut, User, Bell, RefreshCw, MapPin, ChevronRight,
@@ -16,6 +16,7 @@ const PLAN_LABELS: Record<string, string> = {
   business:   '🟠 Business',
   enterprise: '🏢 Enterprise',
 }
+
 const STATUT_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   en_attente: { label: 'En attente', color: 'text-nyme-amber',  bg: 'bg-nyme-amber/15 border-nyme-amber/30' },
   en_cours:   { label: 'En cours',   color: 'text-nyme-violet', bg: 'bg-nyme-violet/15 border-nyme-violet/30' },
@@ -23,15 +24,7 @@ const STATUT_CONFIG: Record<string, { label: string; color: string; bg: string }
   annule:     { label: 'Annulé',     color: 'text-nyme-red',    bg: 'bg-nyme-red/15 border-nyme-red/30' },
 }
 
-function StatCard({
-  icon: Icon, label, value, sub, color
-}: {
-  icon: React.ElementType
-  label: string
-  value: string | number
-  sub?: string
-  color: string
-}) {
+function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: string | number; sub?: string; color: string }) {
   return (
     <div className="card p-5 flex items-start gap-4">
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
@@ -50,25 +43,30 @@ export default function PartenaireDashboard() {
   const router = useRouter()
 
   const [user,        setUser]        = useState<any>(null)
-  const [partenaire,  setPartenaire]  = useState<PartenaireRow | null>(null)
-  const [livraisons,  setLivraisons]  = useState<LivraisonPartenaire[]>([])
+  const [partenaire,  setPartenaire]  = useState<any>(null)
+  const [livraisons,  setLivraisons]  = useState<any[]>([])
   const [loading,     setLoading]     = useState(true)
   const [refreshing,  setRefreshing]  = useState(false)
   const [error,       setError]       = useState('')
 
   // ── Auth guard ──
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
         router.replace('/partenaires/login')
-      } else {
-        setUser(data.session.user)
-        loadData(data.session.user.id)
+        return
       }
-    })
+      setUser(session.user)
+      await loadData(session.user.id)
+    }
+    
+    checkAuth()
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') router.replace('/partenaires/login')
+      if (event === 'SIGNED_OUT') {
+        router.replace('/partenaires/login')
+      }
     })
     return () => listener.subscription.unsubscribe()
   }, [router])
@@ -76,31 +74,48 @@ export default function PartenaireDashboard() {
   // ── Charger données ──
   const loadData = useCallback(async (userId: string) => {
     try {
-      // Profil partenaire
+      setLoading(true)
+      console.log('🟢 Chargement pour user_id:', userId)
+      
+      // 1. Récupérer le partenaire depuis la table 'partenaires'
       const { data: part, error: partErr } = await supabase
         .from('partenaires')
         .select('*')
         .eq('user_id', userId)
         .single()
 
-      if (partErr && partErr.code !== 'PGRST116') throw partErr
+      if (partErr) {
+        console.error('❌ Erreur partenaire:', partErr)
+        if (partErr.code === 'PGRST116') {
+          setError('Aucun profil partenaire trouvé. Contactez l\'administrateur.')
+        } else {
+          setError('Erreur de chargement du profil partenaire')
+        }
+        setLoading(false)
+        return
+      }
 
+      console.log('✅ Partenaire chargé:', part)
       setPartenaire(part)
 
-      // Livraisons (30 dernières)
-      if (part?.id) {
-        const { data: livs } = await supabase
-          .from('livraisons_partenaire')
-          .select('*')
-          .eq('partenaire_id', part.id)
-          .order('created_at', { ascending: false })
-          .limit(30)
+      // 2. Récupérer les livraisons du partenaire
+      const { data: livs, error: livsErr } = await supabase
+        .from('livraisons_partenaire')
+        .select('*')
+        .eq('partenaire_id', part.id)
+        .order('created_at', { ascending: false })
+        .limit(30)
 
+      if (livsErr) {
+        console.error('❌ Erreur livraisons:', livsErr)
+      } else {
+        console.log('✅ Livraisons chargées:', livs?.length || 0)
         setLivraisons(livs || [])
       }
+
     } catch (err: any) {
+      console.error('❌ Erreur générale:', err)
       setError('Erreur de chargement. Vérifiez votre connexion.')
-      console.error(err)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -169,7 +184,7 @@ export default function PartenaireDashboard() {
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/8 border border-white/12">
               <User size={14} className="text-nyme-orange" />
               <span className="text-white/70 text-xs font-body truncate max-w-[120px]">
-                {partenaire?.nom_contact || user?.email}
+                {partenaire?.nom_contact || user?.email?.split('@')[0] || 'Partenaire'}
               </span>
             </div>
             <button
@@ -196,7 +211,7 @@ export default function PartenaireDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
             <h1 className="font-heading text-2xl sm:text-3xl font-black text-nyme-text">
-              Bonjour, {partenaire?.nom_contact?.split(' ')[0] || 'Partenaire'} 👋
+              Bonjour, {partenaire?.nom_contact?.split(' ')[0] || user?.email?.split('@')[0] || 'Partenaire'} 👋
             </h1>
             <p className="text-nyme-text-muted text-sm font-body mt-1">
               {partenaire?.entreprise || 'Votre espace partenaire NYME'}
