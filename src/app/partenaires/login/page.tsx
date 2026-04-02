@@ -48,21 +48,26 @@ export default function PartenairesLoginPage() {
     }
   }
 
-  // ── Inscription ──
+  // ── Inscription SANS vérification email ──
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); setError(''); setSuccess('')
     try {
-      const { error: authErr } = await supabase.auth.signUp({
+      const { data, error: authErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/partenaires/login`,
           data: { role: 'partenaire' },
         },
       })
+      
       if (authErr) throw authErr
-      setSuccess('Vérifiez votre boîte email pour confirmer votre compte.')
+
+      // Connexion automatique après inscription
+      if (data.user) {
+        // Rediriger vers dashboard
+        router.push('/partenaires/dashboard')
+      }
     } catch (err: any) {
       if (err.message?.includes('already registered')) {
         setError("Cet email est déjà utilisé. Connectez-vous plutôt.")
