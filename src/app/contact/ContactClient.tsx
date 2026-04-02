@@ -1,7 +1,8 @@
 'use client'
-
 import { useState } from 'react'
 import { Mail, Phone, MapPin, Send, MessageSquare, Clock, ChevronRight } from 'lucide-react'
+
+const WHATSAPP = '22600000000'
 
 export default function ContactClient() {
   const [form, setForm] = useState({ nom: '', email: '', sujet: '', message: '' })
@@ -11,170 +12,118 @@ export default function ContactClient() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
-      const res = await fetch('/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+      const res = await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erreur inconnue')
       setSent(true)
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de l\'envoi. Réessayez.')
-    } finally {
-      setLoading(false)
-    }
+    } catch (err: any) { setError(err.message || 'Erreur. Réessayez.')
+    } finally { setLoading(false) }
   }
 
+  const cards = [
+    { icon: Phone, title: 'Téléphone', content: '+226 00 00 00 00', sub: 'Lun–Sam, 7h–21h', href: 'tel:+22600000000', accent: 'border-l-nyme-orange' },
+    { icon: Mail, title: 'Email', content: 'nyme.contact@gmail.com', sub: 'Réponse sous 24h', href: 'mailto:nyme.contact@gmail.com', accent: 'border-l-nyme-blue' },
+    { icon: MapPin, title: 'Localisation', content: 'Ouagadougou, BF', sub: 'Afrique de l\'Ouest', href: '#', accent: 'border-l-nyme-green' },
+    { icon: Clock, title: 'Horaires', content: 'Lun–Sam : 7h–21h', sub: 'Dimanche : 8h–18h', href: '/service-client', accent: 'border-l-nyme-violet' },
+  ]
+
   return (
-    <div className="min-h-screen bg-nyme-dark pt-28 pb-20">
+    <div className="min-h-screen bg-nyme-bg pt-20 sm:pt-28 pb-16">
       {/* Hero */}
-      <div className="relative overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full bg-nyme-orange/10 blur-3xl pointer-events-none" />
-        <div className="absolute top-0 right-1/4 w-64 h-64 rounded-full bg-nyme-blue/30 blur-3xl pointer-events-none" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-nyme-orange/20 mb-6">
-            <MessageSquare size={14} className="text-nyme-orange" />
-            <span className="text-nyme-orange text-sm">Contactez-nous</span>
+      <div className="section-hero relative overflow-hidden py-12 sm:py-16 mb-10 sm:mb-14">
+        <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="relative max-w-3xl mx-auto px-4 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white/80 text-xs sm:text-sm font-medium mb-5">
+            <MessageSquare size={13} /> Contactez-nous
           </div>
-          <h1 className="font-heading text-5xl sm:text-6xl font-extrabold text-white mb-4">
-            On est là pour vous
-          </h1>
-          <p className="text-white/50 font-body text-lg max-w-xl mx-auto">
+          <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-black text-white mb-3">On est là pour vous</h1>
+          <p className="text-white/70 text-base sm:text-lg max-w-xl mx-auto">
             Une question, un partenariat, un problème ? L'équipe NYME répond sous 24h.
           </p>
+          <a href={`https://wa.me/${WHATSAPP}?text=${encodeURIComponent('Bonjour NYME, j\'ai une question...')}`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 mt-6 px-5 py-3 rounded-xl bg-nyme-green/20 border border-nyme-green/40 text-nyme-green font-semibold text-sm hover:bg-nyme-green hover:text-white transition-all duration-300">
+            💬 Écrire sur WhatsApp
+          </a>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-3 gap-10">
+        {/* Cards mobiles (grille 2×2) */}
+        <div className="grid grid-cols-2 gap-3 mb-6 lg:hidden">
+          {cards.map(({ icon: Icon, title, content, sub, href, accent }) => (
+            <a key={title} href={href} className={`card border-l-4 ${accent} p-3 sm:p-4 flex items-start gap-2.5`}>
+              <Icon size={15} className="text-nyme-blue shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-nyme-text-muted text-[9px] sm:text-xs uppercase tracking-wider mb-0.5">{title}</div>
+                <div className="text-nyme-text font-semibold text-[11px] sm:text-xs truncate">{content}</div>
+                <div className="text-nyme-text-muted text-[9px] sm:text-xs">{sub}</div>
+              </div>
+            </a>
+          ))}
+        </div>
 
-          {/* Info cards */}
-          <div className="lg:col-span-1 space-y-4">
-            {[
-              {
-                icon: Phone,
-                title: 'Téléphone',
-                content: '+226 00 00 00 00',
-                sub: 'Lun–Sam, 7h–21h',
-                href: 'tel:+22600000000',
-                color: 'text-nyme-orange',
-                bg: 'bg-nyme-orange/10 border-nyme-orange/20',
-              },
-              {
-                icon: Mail,
-                title: 'Email',
-                content: 'contact@nyme.app',
-                sub: 'Réponse sous 24h',
-                href: 'mailto:contact@nyme.app',
-                color: 'text-nyme-blue-light',
-                bg: 'bg-nyme-blue-light/10 border-nyme-blue-light/20',
-              },
-              {
-                icon: MapPin,
-                title: 'Localisation',
-                content: 'Ouagadougou, Burkina Faso',
-                sub: 'Afrique de l\'Ouest',
-                href: '#',
-                color: 'text-green-400',
-                bg: 'bg-green-500/10 border-green-500/20',
-              },
-              {
-                icon: Clock,
-                title: 'Horaires support',
-                content: 'Lun–Sam : 7h–21h',
-                sub: 'Dimanche : 8h–18h',
-                href: '/service-client',
-                color: 'text-purple-400',
-                bg: 'bg-purple-500/10 border-purple-500/20',
-              },
-            ].map(({ icon: Icon, title, content, sub, href, color, bg }) => (
-              <a
-                key={title}
-                href={href}
-                className={`flex items-start gap-4 p-5 rounded-2xl border ${bg} hover:scale-105 transition-all duration-300 block`}
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bg}`}>
-                  <Icon size={18} className={color} />
+        <div className="grid lg:grid-cols-3 gap-7 lg:gap-10">
+          {/* Sidebar desktop */}
+          <div className="hidden lg:block lg:col-span-1 space-y-3">
+            {cards.map(({ icon: Icon, title, content, sub, href, accent }) => (
+              <a key={title} href={href} className={`card border-l-4 ${accent} p-5 flex items-start gap-4 hover:scale-[1.02]`}>
+                <div className="w-9 h-9 rounded-lg bg-nyme-bg-input flex items-center justify-center shrink-0">
+                  <Icon size={16} className="text-nyme-blue" />
                 </div>
                 <div>
-                  <div className="text-white/50 text-xs font-body uppercase tracking-wider mb-1">{title}</div>
-                  <div className="text-white font-semibold text-sm">{content}</div>
-                  <div className="text-white/40 text-xs mt-0.5">{sub}</div>
+                  <div className="text-nyme-text-muted text-xs uppercase tracking-wider mb-0.5">{title}</div>
+                  <div className="text-nyme-text font-semibold text-sm">{content}</div>
+                  <div className="text-nyme-text-muted text-xs">{sub}</div>
                 </div>
-                <ChevronRight size={14} className="text-white/20 ml-auto mt-1 shrink-0" />
+                <ChevronRight size={14} className="text-nyme-border ml-auto mt-1 shrink-0" />
               </a>
             ))}
-
-            {/* Partenaires */}
-            <div id="partenaires" className="p-5 rounded-2xl glass border border-nyme-orange/20">
-              <h3 className="font-heading text-white font-bold mb-2">🤝 Partenariats</h3>
-              <p className="text-white/50 text-xs font-body leading-relaxed mb-3">
-                Vous êtes une boutique, un e-commerce ou une entreprise à Ouagadougou ? Intégrez NYME dans votre chaîne logistique.
+            <div id="partenaires" className="card p-5 border-t-4 border-t-nyme-orange">
+              <h3 className="font-heading text-nyme-text font-bold mb-2">⭐ Partenariats</h3>
+              <p className="text-nyme-text-muted text-xs leading-relaxed mb-3">
+                Boutique ou entreprise à Ouagadougou ? Intégrez NYME dans votre logistique avec un abonnement mensuel.
               </p>
-              <a href="mailto:partenaires@nyme.app" className="text-nyme-orange text-xs font-semibold hover:underline">
-                partenaires@nyme.app →
-              </a>
+              <a href="/partenaires" className="text-nyme-orange text-xs font-semibold hover:underline">Voir l'espace partenaires →</a>
             </div>
           </div>
 
-          {/* Form */}
+          {/* Formulaire */}
           <div className="lg:col-span-2">
-            <div className="glass rounded-3xl p-8 border border-nyme-blue-light/20">
+            <div className="card p-5 sm:p-8">
               {sent ? (
-                <div className="text-center py-16">
-                  <div className="text-6xl mb-4">✅</div>
-                  <h2 className="font-heading text-2xl font-bold text-white mb-3">Message envoyé !</h2>
-                  <p className="text-white/50 font-body">
-                    Merci de nous avoir contactés. L'équipe NYME vous répondra sous 24h.
-                  </p>
-                  <button
-                    onClick={() => { setSent(false); setForm({ nom: '', email: '', sujet: '', message: '' }) }}
-                    className="mt-6 px-6 py-3 rounded-xl bg-nyme-orange/10 border border-nyme-orange/30 text-nyme-orange text-sm hover:bg-nyme-orange/20 transition-colors"
-                  >
-                    Envoyer un autre message
-                  </button>
+                <div className="text-center py-10 sm:py-14">
+                  <div className="text-5xl mb-4">✅</div>
+                  <h2 className="font-heading text-xl sm:text-2xl font-bold text-nyme-text mb-2">Message envoyé !</h2>
+                  <p className="text-nyme-text-muted text-sm">Merci. L'équipe NYME vous répondra sous 24h.</p>
+                  <div className="flex flex-col sm:flex-row justify-center gap-3 mt-6">
+                    <button onClick={() => { setSent(false); setForm({ nom:'', email:'', sujet:'', message:'' }) }}
+                      className="btn-secondary text-sm py-2.5 px-5">Envoyer un autre message</button>
+                    <a href={`https://wa.me/${WHATSAPP}`} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl bg-nyme-green/10 border border-nyme-green/20 text-nyme-green text-sm font-semibold hover:bg-nyme-green hover:text-white transition-all">
+                      💬 WhatsApp
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <>
-                  <h2 className="font-heading text-2xl font-bold text-white mb-6">Envoyer un message</h2>
-                  <form onSubmit={handleSubmit} className="space-y-5">
-                    <div className="grid sm:grid-cols-2 gap-5">
+                  <h2 className="font-heading text-xl sm:text-2xl font-black text-nyme-text mb-5 sm:mb-6">Envoyer un message</h2>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-white/50 text-xs font-body uppercase tracking-wider mb-2">Nom complet *</label>
-                        <input
-                          type="text"
-                          required
-                          value={form.nom}
-                          onChange={e => setForm({ ...form, nom: e.target.value })}
-                          placeholder="Votre nom"
-                          className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/50 transition-colors font-body text-sm"
-                        />
+                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-medium mb-1.5">Nom complet *</label>
+                        <input type="text" required value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} placeholder="Votre nom" className="input-nyme" />
                       </div>
                       <div>
-                        <label className="block text-white/50 text-xs font-body uppercase tracking-wider mb-2">Email *</label>
-                        <input
-                          type="email"
-                          required
-                          value={form.email}
-                          onChange={e => setForm({ ...form, email: e.target.value })}
-                          placeholder="votre@email.com"
-                          className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/50 transition-colors font-body text-sm"
-                        />
+                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-medium mb-1.5">Email *</label>
+                        <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="votre@email.com" className="input-nyme" />
                       </div>
                     </div>
-
                     <div>
-                      <label className="block text-white/50 text-xs font-body uppercase tracking-wider mb-2">Sujet *</label>
-                      <select
-                        required
-                        value={form.sujet}
-                        onChange={e => setForm({ ...form, sujet: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-nyme-dark border border-white/10 text-white focus:outline-none focus:border-nyme-orange/50 transition-colors font-body text-sm"
-                      >
+                      <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-medium mb-1.5">Sujet *</label>
+                      <select required value={form.sujet} onChange={e => setForm({...form, sujet: e.target.value})} className="input-nyme">
                         <option value="">Choisir un sujet</option>
                         <option value="support">Support technique</option>
                         <option value="livraison">Problème de livraison</option>
@@ -184,42 +133,23 @@ export default function ContactClient() {
                         <option value="autre">Autre</option>
                       </select>
                     </div>
-
                     <div>
-                      <label className="block text-white/50 text-xs font-body uppercase tracking-wider mb-2">Message *</label>
-                      <textarea
-                        required
-                        rows={6}
-                        value={form.message}
-                        onChange={e => setForm({ ...form, message: e.target.value })}
-                        placeholder="Décrivez votre demande en détail..."
-                        className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-nyme-orange/50 transition-colors font-body text-sm resize-none"
-                      />
+                      <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-medium mb-1.5">Message *</label>
+                      <textarea required rows={5} value={form.message} onChange={e => setForm({...form, message: e.target.value})}
+                        placeholder="Décrivez votre demande en détail..." className="input-nyme resize-none" />
                     </div>
-
-                    {error && (
-                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-body">
-                        ⚠️ {error}
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-gradient-to-r from-nyme-orange to-nyme-red text-white font-semibold hover:shadow-lg hover:shadow-nyme-orange/30 transition-all duration-300 disabled:opacity-70"
-                    >
-                      {loading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Envoi en cours...
-                        </>
-                      ) : (
-                        <>
-                          <Send size={16} />
-                          Envoyer le message
-                        </>
-                      )}
-                    </button>
+                    {error && <div className="p-3 rounded-xl bg-nyme-red/10 border border-nyme-red/20 text-nyme-red text-xs">⚠️ {error}</div>}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button type="submit" disabled={loading}
+                        className="btn-primary flex items-center justify-center gap-2 py-3.5 disabled:opacity-70">
+                        {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Envoi...</> : <><Send size={15} />Envoyer</>}
+                      </button>
+                      <a href={`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(`Bonjour NYME, je vous contacte via le site web.\n\nNom: ${form.nom}\nSujet: ${form.sujet}\n\n${form.message}`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-nyme-green/10 border border-nyme-green/20 text-nyme-green font-semibold text-sm hover:bg-nyme-green hover:text-white transition-all">
+                        💬 WhatsApp
+                      </a>
+                    </div>
                   </form>
                 </>
               )}
