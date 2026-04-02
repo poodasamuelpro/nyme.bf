@@ -1,5 +1,5 @@
 // src/app/api/admin/create-admin/route.ts
-// Crée un compte administrateur avec mot de passe auto-généré
+// Crée un compte administrateur avec mot de passe auto-généré 
 // Envoie les credentials par email (Resend → Brevo fallback)
 
 import { NextResponse } from 'next/server'
