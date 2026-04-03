@@ -108,12 +108,14 @@ export default function MapAdvanced({ depart, arrivee, coursier, route, onLocati
         map.fitBounds(L.latLngBounds(points).pad(0.2))
       }
 
-      // Click handler — corrigé : geocode retourne GeocodingResult (pas un tableau)
+      // Click handler CORRIGÉ
       if (onLocationSelect) {
         map.on('click', async (e: L.LeafletMouseEvent) => {
           try {
+            // Ici, mapService.geocode renvoie un objet GeocodingResult, pas un tableau
             const result = await mapService.geocode(`${e.latlng.lat},${e.latlng.lng}`)
-            // result est un GeocodingResult, pas un tableau
+            
+            // On utilise directement result.address
             const address = result.address || `Point (${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)})`
             onLocationSelect(e.latlng.lat, e.latlng.lng, address)
           } catch {
