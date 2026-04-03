@@ -45,7 +45,7 @@ const RecenterAutomatically = ({ center, zoom }: { center: LatLngTuple; zoom: nu
   return null
 }
 
-// Composant pour gérer le clic sur la carte
+// ✅ Composant pour gérer le clic sur la carte (correction)
 const MapClickHandler = ({ onClick }: { onClick?: (e: L.LeafletMouseEvent) => void }) => {
   const map = useMap()
   useEffect(() => {
@@ -81,6 +81,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
     }
   }, [depart, arrivee, coursier])
 
+  // ✅ Correction : geocode retourne un tableau
   const handleMapClick = async (e: L.LeafletMouseEvent) => {
     if (onLocationSelect) {
       try {
@@ -107,6 +108,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
       style={{ height: '100%', width: '100%' }}
       ref={mapRef}
     >
+      {/* ✅ Correction : onClick remplacé par MapClickHandler */}
       <MapClickHandler onClick={handleMapClick} />
       <RecenterAutomatically center={mapCenter} zoom={zoom} />
       <TileLayer
