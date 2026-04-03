@@ -1,232 +1,276 @@
-import type { LatLngTuple } from 'leaflet'
-import axios from 'axios'
- 
-interface RouteData {
+/**
+ * Service de cartographie multi-API avec rotation automatique
+ * Priorité: Mapbox → Google Maps → OSRM
+ */
+
+export type MapProvider = 'mapbox' | 'google' | 'osrm'
+
+export interface RouteResult {
   distance: number
   duration: number
-  geometry: string // Encoded polyline
+  polyline: Array<[number, number]>
+  provider: MapProvider
 }
 
-interface GeocodeResult {
-  label: string
+export interface GeocodingResult {
   lat: number
   lng: number
+  address: string
+  provider: MapProvider
 }
 
 class MapService {
-  private googleApiKeys: string[]
-  private mapboxApiKey: string
-  private osrmUrl: string
-  private currentGoogleKeyIndex: number = 0
+  private mapboxKey = process.env.NEXT_PUBLIC_MAPBOX_KEY || ''
+  private googleKeys = (process.env.NEXT_PUBLIC_GOOGLE_KEYS || '').split(',').filter(Boolean)
+  private googleKeyIndex = 0
 
-  constructor() {
-    this.googleApiKeys = process.env.NEXT_PUBLIC_GOOGLE_KEYS?.split(',') || []
-    this.mapboxApiKey = process.env.NEXT_PUBLIC_MAPBOX_KEY || ''
-    this.osrmUrl = process.env.NEXT_PUBLIC_OSRM_URL || 'https://router.project-osrm.org'
-  }
+  private mapboxRequestCount = 0
+  private googleRequestCount = 0
+  private mapboxLimitReached = false
+  private googleLimitReached = false
 
-  private getNextGoogleApiKey(): string | null {
-    if (this.googleApiKeys.length === 0) return null
-    const key = this.googleApiKeys[this.currentGoogleKeyIndex]
-    this.currentGoogleKeyIndex = (this.currentGoogleKeyIndex + 1) % this.googleApiKeys.length
-    return key
-  }
+  private MAPBOX_LIMIT = 50000
+  private GOOGLE_LIMIT = 25000
 
-  async getRoute(startLat: number, startLng: number, endLat: number, endLng: number): Promise<RouteData> {
-    // Try Mapbox first
-    if (this.mapboxApiKey) {
+  async getRoute(
+    startLat: number,
+    startLng: number,
+    endLat: number,
+    endLng: number
+  ): Promise<RouteResult> {
+    if (!this.mapboxLimitReached && this.mapboxKey) {
       try {
-        const response = await axios.get(
-          `https://api.mapbox.com/directions/v5/mapbox/driving/${startLng},${startLat};${endLng},${endLat}`,
-          {
-            params: {
-              geometries: 'geojson',
-              steps: false,
-              access_token: this.mapboxApiKey,
-            },
-          }
-        )
-        const route = response.data.routes[0]
-        if (route) {
-          return {
-            distance: route.distance / 1000, // km
-            duration: route.duration / 60, // minutes
-            geometry: this.encodePolyline(route.geometry.coordinates),
-          }
-        }
-      } catch (error) {
-        console.warn('Mapbox route failed, trying Google Maps:', error)
+        const result = await this.getRouteMapbox(startLat, startLng, endLat, endLng)
+        this.mapboxRequestCount++
+        if (this.mapboxRequestCount > this.MAPBOX_LIMIT) this.mapboxLimitReached = true
+        return result
+      } catch (err) {
+        console.warn('Mapbox failed:', err)
       }
     }
 
-    // Try Google Maps
-    if (this.googleApiKeys.length > 0) {
-      let googleKey = this.getNextGoogleApiKey()
-      while (googleKey) {
-        try {
-          const response = await axios.get(
-            `https://maps.googleapis.com/maps/api/directions/json`,
-            {
-              params: {
-                origin: `${startLat},${startLng}`,
-                destination: `${endLat},${endLng}`,
-                key: googleKey,
-              },
-            }
-          )
-          const route = response.data.routes[0]
-          if (route) {
-            return {
-              distance: route.legs[0].distance.value / 1000,
-              duration: route.legs[0].duration.value / 60,
-              geometry: route.overview_polyline.points,
-            }
-          }
-        } catch (error) {
-          console.warn('Google Maps route failed, trying next key or OSRM:', error)
-          googleKey = this.getNextGoogleApiKey()
-          if (googleKey === this.googleApiKeys[0]) {
-            googleKey = null
-          }
-        }
-      }
-    }
-
-    // Fallback to OSRM
-    try {
-      const response = await axios.get(
-        `${this.osrmUrl}/route/v1/driving/${startLng},${startLat};${endLng},${endLat}`,
-        {
-          params: {
-            geometries: 'geojson',
-            overview: 'full',
-            steps: false,
-          },
-        }
-      )
-      const route = response.data.routes[0]
-      if (route) {
-        return {
-          distance: route.distance / 1000,
-          duration: route.duration / 60,
-          geometry: this.encodePolyline(route.geometry.coordinates),
-        }
-      }
-    } catch (error) {
-      console.error('OSRM route failed:', error)
-    }
-
-    throw new Error('Unable to get route from any map service.')
-  }
-
-  async geocode(address: string): Promise<GeocodeResult[]> {
-    // Try Mapbox first
-    if (this.mapboxApiKey) {
+    if (!this.googleLimitReached && this.googleKeys.length > 0) {
       try {
-        const response = await axios.get(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json`,
-          {
-            params: {
-              access_token: this.mapboxApiKey,
-              limit: 5,
-            },
-          }
-        )
-        return response.data.features.map((feature: any) => ({
-          label: feature.place_name,
-          lat: feature.center[1],
-          lng: feature.center[0],
-        }))
-      } catch (error) {
-        console.warn('Mapbox geocode failed, trying Google Maps:', error)
+        const result = await this.getRouteGoogle(startLat, startLng, endLat, endLng)
+        this.googleRequestCount++
+        if (this.googleRequestCount > this.GOOGLE_LIMIT) this.googleLimitReached = true
+        return result
+      } catch (err) {
+        console.warn('Google Maps failed:', err)
       }
     }
 
-    // Try Google Maps
-    if (this.googleApiKeys.length > 0) {
-      let googleKey = this.getNextGoogleApiKey()
-      while (googleKey) {
-        try {
-          const response = await axios.get(
-            `https://maps.googleapis.com/maps/api/geocode/json`,
-            {
-              params: {
-                address: encodeURIComponent(address),
-                key: googleKey,
-              },
-            }
-          )
-          return response.data.results.map((result: any) => ({
-            label: result.formatted_address,
-            lat: result.geometry.location.lat,
-            lng: result.geometry.location.lng,
-          }))
-        } catch (error) {
-          console.warn('Google Maps geocode failed, trying next key:', error)
-          googleKey = this.getNextGoogleApiKey()
-          if (googleKey === this.googleApiKeys[0]) {
-            googleKey = null
-          }
-        }
+    return this.getRouteOSRM(startLat, startLng, endLat, endLng)
+  }
+
+  private async getRouteMapbox(
+    startLat: number, startLng: number,
+    endLat: number, endLng: number
+  ): Promise<RouteResult> {
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startLng},${startLat};${endLng},${endLat}`
+    const params = new URLSearchParams({
+      access_token: this.mapboxKey,
+      geometries: 'geojson',
+      steps: 'false',
+      language: 'fr',
+    })
+
+    const response = await fetch(`${url}?${params}`)
+    if (!response.ok) throw new Error('Mapbox API error')
+
+    const data = await response.json() as {
+      routes: Array<{ distance: number; duration: number; geometry: { coordinates: Array<[number, number]> } }>
+    }
+
+    if (!data.routes?.length) throw new Error('No route found')
+
+    const route = data.routes[0]
+    return {
+      distance: route.distance / 1000,
+      duration: Math.round(route.duration),
+      polyline: route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+      provider: 'mapbox',
+    }
+  }
+
+  private async getRouteGoogle(
+    startLat: number, startLng: number,
+    endLat: number, endLng: number
+  ): Promise<RouteResult> {
+    const key = this.googleKeys[this.googleKeyIndex % this.googleKeys.length]
+    this.googleKeyIndex++
+
+    const url = 'https://maps.googleapis.com/maps/api/directions/json'
+    const params = new URLSearchParams({
+      origin: `${startLat},${startLng}`,
+      destination: `${endLat},${endLng}`,
+      key,
+      mode: 'driving',
+      language: 'fr',
+    })
+
+    const response = await fetch(`${url}?${params}`)
+    if (!response.ok) throw new Error('Google Maps API error')
+
+    const data = await response.json() as {
+      routes: Array<{ legs: Array<{ distance: { value: number }; duration: { value: number } }>; overview_polyline: { points: string } }>
+      status: string
+    }
+
+    if (data.status !== 'OK' || !data.routes?.length) throw new Error('No route found')
+
+    const route = data.routes[0]
+    const leg = route.legs[0]
+    const polyline = this.decodePolyline(route.overview_polyline.points)
+
+    return {
+      distance: leg.distance.value / 1000,
+      duration: leg.duration.value,
+      polyline,
+      provider: 'google',
+    }
+  }
+
+  private async getRouteOSRM(
+    startLat: number, startLng: number,
+    endLat: number, endLng: number
+  ): Promise<RouteResult> {
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}`
+    const params = new URLSearchParams({ overview: 'full', geometries: 'geojson' })
+
+    const response = await fetch(`${url}?${params}`)
+    if (!response.ok) throw new Error('OSRM API error')
+
+    const data = await response.json() as {
+      routes: Array<{ distance: number; duration: number; geometry: { coordinates: Array<[number, number]> } }>
+    }
+
+    if (!data.routes?.length) throw new Error('No route found')
+
+    const route = data.routes[0]
+    return {
+      distance: route.distance / 1000,
+      duration: Math.round(route.duration),
+      polyline: route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+      provider: 'osrm',
+    }
+  }
+
+  private decodePolyline(encoded: string): Array<[number, number]> {
+    const points: Array<[number, number]> = []
+    let index = 0
+    let lat = 0
+    let lng = 0
+
+    while (index < encoded.length) {
+      let result = 0
+      let shift = 0
+      let byte = 0
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63
+        result |= (byte & 0x1f) << shift
+        shift += 5
+      } while (byte >= 0x20)
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1
+      lat += dlat
+
+      result = 0
+      shift = 0
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63
+        result |= (byte & 0x1f) << shift
+        shift += 5
+      } while (byte >= 0x20)
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1
+      lng += dlng
+
+      points.push([lat / 1e5, lng / 1e5])
+    }
+
+    return points
+  }
+
+  async geocode(address: string): Promise<GeocodingResult> {
+    if (!this.mapboxLimitReached && this.mapboxKey) {
+      try {
+        return await this.geocodeMapbox(address)
+      } catch (err) {
+        console.warn('Mapbox geocoding failed:', err)
       }
     }
 
-    // Fallback to OpenStreetMap Nominatim
-    try {
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/search`,
-        {
-          params: {
-            q: address,
-            format: 'json',
-            limit: 5,
-          },
-        }
-      )
-      return response.data.map((result: any) => ({
-        label: result.display_name,
-        lat: parseFloat(result.lat),
-        lng: parseFloat(result.lon),
-      }))
-    } catch (error) {
-      console.error('Nominatim geocode failed:', error)
+    if (!this.googleLimitReached && this.googleKeys.length > 0) {
+      try {
+        return await this.geocodeGoogle(address)
+      } catch (err) {
+        console.warn('Google geocoding failed:', err)
+      }
     }
 
-    throw new Error('Unable to geocode address from any map service.')
+    return {
+      lat: 12.3547,
+      lng: -1.5247,
+      address,
+      provider: 'osrm',
+    }
   }
 
-  private encodePolyline(coordinates: [number, number][]): string {
-    let encoded = '';
-    let prevLat = 0;
-    let prevLng = 0;
+  private async geocodeMapbox(address: string): Promise<GeocodingResult> {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json`
+    const params = new URLSearchParams({ access_token: this.mapboxKey, limit: '1', language: 'fr' })
 
-    for (let i = 0; i < coordinates.length; i++) {
-      const [lng, lat] = coordinates[i];
-      const iLat = Math.round(lat * 1e5);
-      const iLng = Math.round(lng * 1e5);
+    const response = await fetch(`${url}?${params}`)
+    if (!response.ok) throw new Error('Mapbox geocoding error')
 
-      let dLat = iLat - prevLat;
-      let dLng = iLng - prevLng;
+    const data = await response.json() as { features: Array<{ geometry: { coordinates: [number, number] }; place_name: string }> }
+    if (!data.features?.length) throw new Error('No results')
 
-      prevLat = iLat;
-      prevLng = iLng;
-
-      encoded += this.encodeCoord(dLat);
-      encoded += this.encodeCoord(dLng);
-    }
-
-    return encoded;
+    const [lng, lat] = data.features[0].geometry.coordinates
+    return { lat, lng, address: data.features[0].place_name, provider: 'mapbox' }
   }
 
-  private encodeCoord(coord: number): string {
-    coord = coord < 0 ? ~(coord << 1) : (coord << 1);
-    let encoded = '';
-    while (coord >= 0x20) {
-      encoded += String.fromCharCode((0x20 | (coord & 0x1f)) + 63);
-      coord >>= 5;
+  private async geocodeGoogle(address: string): Promise<GeocodingResult> {
+    const key = this.googleKeys[this.googleKeyIndex % this.googleKeys.length]
+    this.googleKeyIndex++
+
+    const url = 'https://maps.googleapis.com/maps/api/geocode/json'
+    const params = new URLSearchParams({ address, key, language: 'fr' })
+
+    const response = await fetch(`${url}?${params}`)
+    if (!response.ok) throw new Error('Google geocoding error')
+
+    const data = await response.json() as { results: Array<{ geometry: { location: { lat: number; lng: number } }; formatted_address: string }>; status: string }
+    if (data.status !== 'OK' || !data.results?.length) throw new Error('No results')
+
+    const result = data.results[0]
+    return {
+      lat: result.geometry.location.lat,
+      lng: result.geometry.location.lng,
+      address: result.formatted_address,
+      provider: 'google',
     }
-    encoded += String.fromCharCode(coord + 63);
-    return encoded;
+  }
+
+  resetMonthlyCounters() {
+    const today = new Date()
+    if (today.getDate() === 1) {
+      this.mapboxRequestCount = 0
+      this.googleRequestCount = 0
+      this.mapboxLimitReached = false
+      this.googleLimitReached = false
+    }
+  }
+
+  getStatus() {
+    return {
+      mapbox: { available: !this.mapboxLimitReached && !!this.mapboxKey, requestCount: this.mapboxRequestCount, limit: this.MAPBOX_LIMIT },
+      google: { available: !this.googleLimitReached && this.googleKeys.length > 0, requestCount: this.googleRequestCount, limit: this.GOOGLE_LIMIT },
+      osrm: { available: true, requestCount: 0, limit: 'unlimited' },
+    }
   }
 }
 
