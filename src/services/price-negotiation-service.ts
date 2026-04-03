@@ -1,132 +1,201 @@
-import { supabase } from "@/lib/supabase";
+/**
+ * Service de négociation de prix (style InDrive)
+ * Permet aux clients de proposer un prix et aux coursiers de contre-proposer
+ */
 
-interface Proposition {
-    id: string;
-    livraison_id: string;
-    propose_par_id: string;
-    montant: number;
-    statut: 'en_attente' | 'accepte' | 'refuse';
-    created_at: string;
+import { supabase } from '@/lib/supabase'
+import type { PropositionPrix } from '@/lib/supabase'
+
+export interface PriceProposal {
+  id: string
+  livraison_id: string
+  auteur_id: string
+  role_auteur: 'client' | 'coursier'
+  montant: number
+  statut: 'en_attente' | 'accepte' | 'refuse'
+  created_at: string
+  auteur?: { nom: string; avatar_url?: string }
 }
 
 class PriceNegotiationService {
+  /**
+   * Le client propose un prix initial
+   */
+  async proposePriceAsClient(
+    livraison_id: string,
+    client_id: string,
+    montant: number
+  ): Promise<PropositionPrix> {
+    const { data, error } = await supabase
+      .from('propositions_prix')
+      .insert({
+        livraison_id,
+        auteur_id: client_id,
+        role_auteur: 'client',
+        montant,
+        statut: 'en_attente',
+      })
+      .select()
+      .single()
 
-    /**
-     * Crée une nouvelle proposition de prix pour une livraison.
-     * @param livraisonId - L'ID de la livraison.
-     * @param proposeParId - L'ID de l'utilisateur qui fait la proposition (client ou coursier).
-     * @param montant - Le montant proposé.
-     */
-    async createProposition(livraisonId: string, proposeParId: string, montant: number): Promise<Proposition> {
-        // D'abord, refuser toutes les propositions précédentes pour cette livraison
-        await supabase
-            .from('propositions_prix')
-            .update({ statut: 'refuse' })
-            .eq('livraison_id', livraisonId)
-            .eq('statut', 'en_attente');
+    if (error) throw error
+    return data as PropositionPrix
+  }
 
-        // Ensuite, créer la nouvelle proposition
-        const { data, error } = await supabase
-            .from('propositions_prix')
-            .insert({
-                livraison_id: livraisonId,
-                propose_par_id: proposeParId,
-                montant: montant,
-                statut: 'en_attente'
-            })
-            .select()
-            .single();
+  /**
+   * Le coursier propose un prix (contre-proposition)
+   */
+  async proposePriceAsCourier(
+    livraison_id: string,
+    coursier_id: string,
+    montant: number
+  ): Promise<PropositionPrix> {
+    const { data, error } = await supabase
+      .from('propositions_prix')
+      .insert({
+        livraison_id,
+        auteur_id: coursier_id,
+        role_auteur: 'coursier',
+        montant,
+        statut: 'en_attente',
+      })
+      .select()
+      .single()
 
-        if (error) {
-            console.error('Error creating proposition:', error);
-            throw new Error("Impossible de créer la proposition.");
-        }
+    if (error) throw error
+    return data as PropositionPrix
+  }
 
-        return data;
+  /**
+   * Récupère toutes les propositions pour une livraison
+   */
+  async getProposalsForDelivery(livraison_id: string): Promise<PriceProposal[]> {
+    const { data, error } = await supabase
+      .from('propositions_prix')
+      .select('*, auteur:auteur_id(nom, avatar_url)')
+      .eq('livraison_id', livraison_id)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return (data || []) as PriceProposal[]
+  }
+
+  /**
+   * Le client accepte une proposition de prix
+   */
+  async acceptProposal(
+    livraison_id: string,
+    proposition_id: string,
+    client_id: string,
+    montant: number
+  ): Promise<void> {
+    // Mettre à jour la proposition
+    const { error: updateError } = await supabase
+      .from('propositions_prix')
+      .update({ statut: 'accepte' })
+      .eq('id', proposition_id)
+
+    if (updateError) throw updateError
+
+    // Mettre à jour la livraison avec le prix final
+    const { error: livraisonError } = await supabase
+      .from('livraisons')
+      .update({
+        prix_final: montant,
+        statut_paiement: 'en_attente',
+      })
+      .eq('id', livraison_id)
+
+    if (livraisonError) throw livraisonError
+
+    // Refuser les autres propositions
+    await supabase
+      .from('propositions_prix')
+      .update({ statut: 'refuse' })
+      .eq('livraison_id', livraison_id)
+      .neq('id', proposition_id)
+  }
+
+  /**
+   * Refuse une proposition de prix
+   */
+  async rejectProposal(proposition_id: string): Promise<void> {
+    const { error } = await supabase
+      .from('propositions_prix')
+      .update({ statut: 'refuse' })
+      .eq('id', proposition_id)
+
+    if (error) throw error
+  }
+
+  /**
+   * Récupère les propositions en attente pour un coursier
+   */
+  async getPendingProposalsForCourier(coursier_id: string): Promise<PriceProposal[]> {
+    const { data, error } = await supabase
+      .from('propositions_prix')
+      .select('*, livraison:livraison_id(*, client:client_id(nom, avatar_url))')
+      .eq('auteur_id', coursier_id)
+      .eq('statut', 'en_attente')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return (data || []) as PriceProposal[]
+  }
+
+  /**
+   * Calcule le prix recommandé basé sur la distance et le type de course
+   */
+  calculateRecommendedPrice(
+    distanceKm: number,
+    type: 'immediate' | 'urgente' | 'programmee'
+  ): number {
+    let price = 800
+    price += distanceKm * 200
+
+    if (type === 'urgente') {
+      price *= 1.3
+    } else if (type === 'programmee') {
+      price *= 0.9
     }
 
-    /**
-     * Récupère toutes les propositions pour une livraison donnée.
-     * @param livraisonId - L'ID de la livraison.
-     */
-    async getPropositions(livraisonId: string): Promise<Proposition[]> {
-        const { data, error } = await supabase
-            .from('propositions_prix')
-            .select('*')
-            .eq('livraison_id', livraisonId)
-            .order('created_at', { ascending: false });
+    return Math.round(price)
+  }
 
-        if (error) {
-            console.error('Error fetching propositions:', error);
-            throw new Error("Impossible de récupérer les propositions.");
-        }
-
-        return data || [];
+  /**
+   * Valide une proposition de prix
+   */
+  validateProposal(montant: number, prixCalcule: number): {
+    valid: boolean
+    message?: string
+    ratio?: number
+  } {
+    if (montant <= 0) {
+      return { valid: false, message: 'Le montant doit être positif' }
     }
 
-    /**
-     * Accepte une proposition de prix. Met à jour le statut de la proposition et le prix final de la livraison.
-     * @param propositionId - L'ID de la proposition à accepter.
-     */
-    async acceptProposition(propositionId: string): Promise<void> {
-        // 1. Récupérer les détails de la proposition
-        const { data: proposition, error: propError } = await supabase
-            .from('propositions_prix')
-            .select('id, livraison_id, montant')
-            .eq('id', propositionId)
-            .single();
+    const ratio = montant / prixCalcule
+    const minRatio = 0.5
+    const maxRatio = 2.0
 
-        if (propError || !proposition) {
-            console.error('Error fetching proposition to accept:', propError);
-            throw new Error("Proposition introuvable.");
-        }
-
-        // 2. Mettre à jour le statut de la proposition acceptée
-        const { error: updatePropError } = await supabase
-            .from('propositions_prix')
-            .update({ statut: 'accepte' })
-            .eq('id', propositionId);
-
-        if (updatePropError) {
-            console.error('Error accepting proposition:', updatePropError);
-            throw new Error("Impossible d'accepter la proposition.");
-        }
-
-        // 3. Mettre à jour le prix final de la livraison
-        const { error: updateLivraisonError } = await supabase
-            .from('livraisons')
-            .update({ prix_final: proposition.montant })
-            .eq('id', proposition.livraison_id);
-
-        if (updateLivraisonError) {
-            console.error('Error updating livraison price:', updateLivraisonError);
-            // Idéalement, il faudrait une transaction pour rollback la proposition acceptée
-            throw new Error("Impossible de mettre à jour le prix de la livraison.");
-        }
-
-        // 4. Refuser toutes les autres propositions en attente pour cette livraison
-        await supabase
-            .from('propositions_prix')
-            .update({ statut: 'refuse' })
-            .eq('livraison_id', proposition.livraison_id)
-            .eq('statut', 'en_attente');
+    if (ratio < minRatio) {
+      return {
+        valid: false,
+        message: `Le montant doit être au moins ${Math.round(prixCalcule * minRatio)} XOF`,
+        ratio,
+      }
     }
 
-     /**
-     * Refuse une proposition de prix.
-     * @param propositionId - L'ID de la proposition à refuser.
-     */
-    async refuseProposition(propositionId: string): Promise<void> {
-        const { error } = await supabase
-            .from('propositions_prix')
-            .update({ statut: 'refuse' })
-            .eq('id', propositionId);
-
-        if (error) {
-            console.error('Error refusing proposition:', error);
-            throw new Error("Impossible de refuser la proposition.");
-        }
+    if (ratio > maxRatio) {
+      return {
+        valid: false,
+        message: `Le montant ne doit pas dépasser ${Math.round(prixCalcule * maxRatio)} XOF`,
+        ratio,
+      }
     }
+
+    return { valid: true, ratio }
+  }
 }
 
-export const priceNegotiationService = new PriceNegotiationService();
+export const priceNegotiationService = new PriceNegotiationService()
