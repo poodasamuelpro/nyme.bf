@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L, { LatLngTuple } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { mapService } from '@/services/map-service'
+import polyline from '@mapbox/polyline'
 
 // Fix default icon issues with Webpack
 // @ts-ignore
@@ -82,7 +83,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
     }
   }
 
-  const decodedPolyline = route?.geometry ? L.Polyline.decode(route.geometry) : []
+  const decodedPolyline = route?.geometry ? polyline.decode(route.geometry) : []
 
   return (
     <MapContainer
