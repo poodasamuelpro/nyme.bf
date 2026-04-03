@@ -17,10 +17,6 @@ export const supabase = createClient(URL, ANON, {
 
 // ── TYPES ALIGNÉS SUR LES MIGRATIONS NYME (001-006) ──────────────────
 
-/**
- * Table: utilisateurs
- * Note: Remplace "profiles" ou "users" dans tout le code TS.
- */
 export type Utilisateur = {
   id:           string
   nom:          string | null
@@ -37,35 +33,28 @@ export type Utilisateur = {
   updated_at:   string
 }
 
-/**
- * Table: livraisons (Standard App Mobile)
- * ATTENTION : Les noms ici doivent matcher exactement la Migration 006
- */
 export type Livraison = {
   id:                string
   client_id:         string
   coursier_id:       string | null
-  statut:            'en_attente' | 'acceptee' | 'en_rout_depart' | 'colis_recupere' | 'en_route_arrivee' | 'livree' | 'annulee'
-  // Noms exacts de la Migration 006
+  statut:            'en_attente' | 'acceptee' | 'en_route_depart' | 'colis_recupere' | 'en_route_arrivee' | 'livree' | 'annulee'
+  // Noms exacts selon Migration 006
   depart_adresse:    string
   depart_lat:        number 
   depart_lng:        number
   arrivee_adresse:   string
   arrivee_lat:       number
   arrivee_lng:       number
-  // Paiement et Prix
   prix_calcule:      number
   prix_final:        number | null
   statut_paiement:   'en_attente' | 'paye' | 'rembourse'
   destinataire_nom:  string
   destinataire_tel:  string
+  instructions:      string | null
   created_at:        string
   updated_at:        string
 }
 
-/**
- * Table: partenaires (Dashboard Web)
- */
 export type PartenaireRow = {
   id:               string
   user_id:          string
@@ -85,10 +74,6 @@ export type PartenaireRow = {
   updated_at:       string
 }
 
-/**
- * Table: livraisons_partenaire (Dashboard Web)
- * Note: Ici les colonnes sont restées en lat_depart (Migration 004)
- */
 export type LivraisonPartenaireRow = {
   id:               string
   partenaire_id:    string
@@ -120,11 +105,8 @@ export interface PropositionPrix {
   created_at: string
 }
 
-// ── HELPERS SYNC SUR LA TABLE 'utilisateurs' ───────────────────────
+// ── HELPERS ────────────────────────────────────────────────────────
 
-/**
- * Récupérer le profil depuis la table 'utilisateurs'
- */
 export async function getUtilisateur(userId: string): Promise<Utilisateur | null> {
   const { data, error } = await supabase
     .from('utilisateurs')
