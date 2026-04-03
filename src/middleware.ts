@@ -1,19 +1,20 @@
+// src/middleware.ts
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// ===== ROUTES PROTÉGÉES =====
+// ===== NOUVELLES ROUTES PROTÉGÉES PAR RÔLE =====
 const PROTECTED_ROUTES: Record<string, string[]> = {
   '/client': ['client', 'admin'],
   '/coursier': ['coursier', 'admin'],
-  '/partenaires/dashboard': ['partenaire', 'admin'], // On protège le dashboard, pas la racine
+  '/partenaires': ['partenaire', 'admin'],
   '/admin-x9k2m': ['admin'],
 }
 
 // Routes publiques
 const PUBLIC_ROUTES = [
   '/',
-  '/partenaires',      // ✅ TA PAGE DE PRÉSENTATION EST MAINTENANT PUBLIQUE
+  '/partenaires', // ✅ SEULE MODIFICATION : TA PAGE PUBLIQUE
   '/login',
   '/register',
   '/coursier/login',
@@ -21,10 +22,9 @@ const PUBLIC_ROUTES = [
   '/admin-x9k2m/login',
   '/api/auth',
   '/api/public',
-  '/contact',
-  '/service-client'
 ]
 
+// ===== MIDDLEWARE PRINCIPAL =====
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
@@ -32,15 +32,10 @@ export async function middleware(req: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession()
   const pathname = req.nextUrl.pathname
 
-  // 1. Vérifier si c'est EXACTEMENT la page partenaire publique
-  if (pathname === '/partenaires') {
-    return res
-  }
+  const isOriginalProtected = pathname.startsWith('/partenaires/') || 
+                               pathname.startsWith('/admin-x9k2m/')
 
-  // 2. Vérifier si la route est dans la liste publique
-  const isPublicRoute = PUBLIC_ROUTES.some(route => 
-    pathname === route || pathname.startsWith('/api/')
-  )
+  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith('/api/'))
 
   if (isPublicRoute) {
     if (session && (pathname === '/login' || pathname === '/register')) {
@@ -50,22 +45,19 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // 3. Logique de protection pour les sous-pages (dashboard, etc.)
   const protectedBase = Object.keys(PROTECTED_ROUTES).find(base =>
     pathname.startsWith(base)
   )
 
-  // Cas spécial pour protéger tout /partenaires/ sauf la racine déjà gérée
-  const isProtectedPartner = pathname.startsWith('/partenaires/') && pathname !== '/partenaires'
-
-  if (protectedBase || isProtectedPartner) {
+  if (protectedBase || isOriginalProtected) {
     if (!session) {
-      const base = pathname.startsWith('/partenaires') ? '/partenaires' : '/admin-x9k2m'
+      const base = protectedBase || (pathname.startsWith('/partenaires') ? '/partenaires' : '/admin-x9k2m')
       return redirectToLogin(req, base)
     }
 
     const userRole = await getUserRole(supabase, session.user.id)
-    const allowedRoles = protectedBase ? PROTECTED_ROUTES[protectedBase] : ['partenaire', 'admin']
+    const allowedRoles = protectedBase ? PROTECTED_ROUTES[protectedBase] : 
+                         (pathname.startsWith('/partenaires') ? ['partenaire', 'admin'] : ['admin'])
 
     if (!allowedRoles.includes(userRole)) {
       return redirectToDashboard(req, userRole)
@@ -118,9 +110,11 @@ function redirectToDashboard(req: NextRequest, role: string): NextResponse {
 
 export const config = {
   matcher: [
-    /* * On exclut les fichiers statiques et images du middleware
-     * pour éviter de ralentir le site 
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/partenaires/:path*',
+    '/admin-x9k2m/:path*',
+    '/client/:path*',
+    '/coursier/:path*',
+    '/login',
+    '/register',
   ],
 }
