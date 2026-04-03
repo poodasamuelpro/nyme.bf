@@ -1,4 +1,4 @@
-// src/app/client/dashboard/page.tsx — Dashboard client complet
+// src/app/client/dashboard/page.tsx — Dashboard client complet 
 // Vérification rôle côté page
 'use client'
 import { useState, useEffect, useCallback } from 'react'
