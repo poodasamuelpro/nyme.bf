@@ -1,26 +1,19 @@
-// src/middleware.ts
-// ✅ Middleware fusionné : garde la synchro cookies + ajout protection par rôles
-// La protection des routes est gérée côté client dans chaque page dashboard.
-// Supprimer toute logique de redirection ici évite les boucles sur Vercel.
-
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// ===== PARTIE EXISTANTE (inchangée) =====
-// (gardée pour compatibilité)
-
-// ===== NOUVELLES ROUTES PROTÉGÉES PAR RÔLE =====
+// ===== ROUTES PROTÉGÉES =====
 const PROTECTED_ROUTES: Record<string, string[]> = {
   '/client': ['client', 'admin'],
   '/coursier': ['coursier', 'admin'],
-  '/partenaires': ['partenaire', 'admin'],
+  '/partenaires/dashboard': ['partenaire', 'admin'], // On protège le dashboard, pas la racine
   '/admin-x9k2m': ['admin'],
 }
 
-// Routes publiques (pas de redirection)
+// Routes publiques
 const PUBLIC_ROUTES = [
   '/',
+  '/partenaires',      // ✅ TA PAGE DE PRÉSENTATION EST MAINTENANT PUBLIQUE
   '/login',
   '/register',
   '/coursier/login',
@@ -28,28 +21,28 @@ const PUBLIC_ROUTES = [
   '/admin-x9k2m/login',
   '/api/auth',
   '/api/public',
+  '/contact',
+  '/service-client'
 ]
 
-// ===== MIDDLEWARE PRINCIPAL (fusionné) =====
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
-  // 1. EXISTANT : obligatoire pour que Supabase rafraîchisse le token
   const { data: { session } } = await supabase.auth.getSession()
-
   const pathname = req.nextUrl.pathname
 
-  // 2. EXISTANT : routes protégées originales (partenaires et admin-x9k2m)
-  // Gardé tel quel pour compatibilité
-  const isOriginalProtected = pathname.startsWith('/partenaires/') || 
-                               pathname.startsWith('/admin-x9k2m/')
+  // 1. Vérifier si c'est EXACTEMENT la page partenaire publique
+  if (pathname === '/partenaires') {
+    return res
+  }
 
-  // 3. NOUVEAU : vérifier si la route est publique
-  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith('/api/'))
+  // 2. Vérifier si la route est dans la liste publique
+  const isPublicRoute = PUBLIC_ROUTES.some(route => 
+    pathname === route || pathname.startsWith('/api/')
+  )
 
   if (isPublicRoute) {
-    // Si connecté et sur page de login, rediriger vers dashboard
     if (session && (pathname === '/login' || pathname === '/register')) {
       const userRole = await getUserRole(supabase, session.user.id)
       return redirectToDashboard(req, userRole)
@@ -57,25 +50,24 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // 4. NOUVEAU : vérifier si route protégée par rôle
+  // 3. Logique de protection pour les sous-pages (dashboard, etc.)
   const protectedBase = Object.keys(PROTECTED_ROUTES).find(base =>
     pathname.startsWith(base)
   )
 
-  if (protectedBase || isOriginalProtected) {
-    // Pas de session → rediriger vers login approprié
+  // Cas spécial pour protéger tout /partenaires/ sauf la racine déjà gérée
+  const isProtectedPartner = pathname.startsWith('/partenaires/') && pathname !== '/partenaires'
+
+  if (protectedBase || isProtectedPartner) {
     if (!session) {
-      const base = protectedBase || (pathname.startsWith('/partenaires') ? '/partenaires' : '/admin-x9k2m')
+      const base = pathname.startsWith('/partenaires') ? '/partenaires' : '/admin-x9k2m'
       return redirectToLogin(req, base)
     }
 
-    // Vérifier le rôle
     const userRole = await getUserRole(supabase, session.user.id)
-    const allowedRoles = protectedBase ? PROTECTED_ROUTES[protectedBase] : 
-                         (pathname.startsWith('/partenaires') ? ['partenaire', 'admin'] : ['admin'])
+    const allowedRoles = protectedBase ? PROTECTED_ROUTES[protectedBase] : ['partenaire', 'admin']
 
     if (!allowedRoles.includes(userRole)) {
-      // Rôle non autorisé → rediriger vers son dashboard
       return redirectToDashboard(req, userRole)
     }
   }
@@ -115,32 +107,20 @@ function redirectToLogin(req: NextRequest, protectedBase: string): NextResponse 
 function redirectToDashboard(req: NextRequest, role: string): NextResponse {
   const url = req.nextUrl.clone()
   switch (role) {
-    case 'client':
-      url.pathname = '/client/dashboard'
-      break
-    case 'coursier':
-      url.pathname = '/coursier/dashboard-new'
-      break
-    case 'partenaire':
-      url.pathname = '/partenaires/dashboard'
-      break
-    case 'admin':
-      url.pathname = '/admin-x9k2m/dashboard'
-      break
-    default:
-      url.pathname = '/login'
+    case 'client': url.pathname = '/client/dashboard'; break
+    case 'coursier': url.pathname = '/coursier/dashboard-new'; break
+    case 'partenaire': url.pathname = '/partenaires/dashboard'; break
+    case 'admin': url.pathname = '/admin-x9k2m/dashboard'; break
+    default: url.pathname = '/login'
   }
   return NextResponse.redirect(url)
 }
 
-// ===== MATCHER OPTIMISÉ POUR VERCEL (pas Cloudflare) =====
 export const config = {
   matcher: [
-    '/partenaires/:path*',
-    '/admin-x9k2m/:path*',
-    '/client/:path*',
-    '/coursier/:path*',
-    '/login',
-    '/register',
+    /* * On exclut les fichiers statiques et images du middleware
+     * pour éviter de ralentir le site 
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
