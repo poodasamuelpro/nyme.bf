@@ -16,7 +16,6 @@ const navLinks = [
 
 /**
  * Pages à fond CLAIR (#F8FAFF) → le header doit être opaque bleu foncé dès le départ
- * pour que le texte blanc reste lisible.
  */
 const LIGHT_PAGES = ['/contact', '/partenaires']
 
@@ -25,7 +24,7 @@ export default function Header() {
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const pathname = usePathname()
 
-  const isLightPage = LIGHT_PAGES.some(p => pathname?.startsWith(p))
+  const isLightPage = LIGHT_PAGES.some(p => pathname === p || pathname?.startsWith(p))
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20)
@@ -44,8 +43,6 @@ export default function Header() {
     return () => { document.body.style.overflow = '' }
   }, [isMobileOpen])
 
-  /* Sur page claire : toujours fond plein bleu foncé.
-     Sur page sombre : transparent → fond plein au scroll. */
   const headerBg =
     isLightPage || isScrolled || isMobileOpen
       ? 'bg-nyme-primary-dark/97 backdrop-blur-xl border-b border-white/10 shadow-lg shadow-black/20'
@@ -55,7 +52,6 @@ export default function Header() {
 
   return (
     <>
-      {/* ── Header ── */}
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${headerBg} ${py}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-12">
@@ -124,24 +120,14 @@ export default function Header() {
         </div>
       </header>
 
-      {/* ── Overlay mobile ── */}
+      {/* Overlay mobile */}
       <div
         className={`fixed inset-0 z-40 md:hidden transition-all duration-300 ${
           isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-          onClick={() => setIsMobileOpen(false)}
-        />
-
-        {/* Panel */}
-        <div
-          className={`absolute top-0 left-0 right-0 bg-nyme-primary-dark border-b-2 border-nyme-orange/30 pt-20 pb-8 px-4 transition-transform duration-300 ${
-            isMobileOpen ? 'translate-y-0' : '-translate-y-full'
-          }`}
-        >
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsMobileOpen(false)} />
+        <div className={`absolute top-0 left-0 right-0 bg-nyme-primary-dark border-b-2 border-nyme-orange/30 pt-20 pb-8 px-4 transition-transform duration-300 ${isMobileOpen ? 'translate-y-0' : '-translate-y-full'}`}>
           <nav className="flex flex-col gap-1 mb-6">
             {navLinks.map((link) => {
               const isPartner = link.label === 'Partenaires'
@@ -162,28 +148,9 @@ export default function Header() {
               )
             })}
           </nav>
-
-          <a
-            href="#telecharger"
-            onClick={() => setIsMobileOpen(false)}
-            className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-gradient-to-r from-nyme-orange to-[#d4691a] text-white font-bold text-base shadow-lg font-body"
-          >
+          <a href="#telecharger" onClick={() => setIsMobileOpen(false)} className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-gradient-to-r from-nyme-orange to-[#d4691a] text-white font-bold text-base shadow-lg font-body">
             <Zap size={18} /> Télécharger l'app
           </a>
-
-          {/* Email rapide */}
-          <a
-            href="mailto:nyme.contact@gmail.com"
-            onClick={() => setIsMobileOpen(false)}
-            className="flex items-center justify-center gap-2 w-full py-3 mt-3 rounded-xl border border-white/15 text-white/60 text-sm font-body hover:text-white hover:border-white/30 transition-colors"
-          >
-            ✉️ nyme.contact@gmail.com
-          </a>
-
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-white/40 text-xs font-body">Application en développement</span>
-          </div>
         </div>
       </div>
     </>
