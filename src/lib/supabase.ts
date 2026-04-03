@@ -1,4 +1,3 @@
-// src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js'
 
 const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -17,6 +16,17 @@ export const supabase = createClient(URL, ANON, {
 })
 
 // ── Types alignés avec le schéma NYME ─────────────────────────────
+
+// AJOUT : Type pour la négociation de prix
+export interface PropositionPrix {
+  id: string
+  livraison_id: string
+  auteur_id: string
+  role_auteur: 'client' | 'coursier'
+  montant: number
+  statut: 'en_attente' | 'accepte' | 'refuse'
+  created_at: string
+}
 
 export type UtilisateurRow = {
   id:           string
