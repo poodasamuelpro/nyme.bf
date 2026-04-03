@@ -91,9 +91,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
       zoom={zoom}
       scrollWheelZoom={true}
       style={{ height: '100%', width: '100%' }}
-      whenCreated={mapInstance => {
-        mapRef.current = mapInstance
-      }}
+      ref={mapRef}
       onClick={handleMapClick}
     >
       <RecenterAutomatically center={mapCenter} zoom={zoom} />
@@ -115,14 +113,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
       )}
 
       {coursier && (
-        <Marker
-          position={[coursier.lat, coursier.lng]}
-          icon={L.icon({
-            iconUrl: '/images/moto-marker.png',
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-          })}
-        >
+        <Marker position={[coursier.lat, coursier.lng]}>
           <Popup>{coursier.nom || 'Coursier'}</Popup>
         </Marker>
       )}
