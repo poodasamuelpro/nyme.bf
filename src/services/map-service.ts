@@ -1,5 +1,5 @@
 /**
- * Service de cartographie multi-API avec rotation automatique
+ * Service de cartographie multi-API avec rotation automatique 
  */
 export type MapProvider = 'mapbox' | 'google' | 'osrm'
 
