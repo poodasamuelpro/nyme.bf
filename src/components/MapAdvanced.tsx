@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
-import L from 'leaflet'
+import L, { LatLngTuple } from 'leaflet'  // ← AJOUT : import de LatLngTuple
 import 'leaflet/dist/leaflet.css'
 import { mapService } from '@/services/map-service'
 
@@ -96,8 +96,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
     >
       <RecenterAutomatically center={mapCenter} zoom={zoom} />
       <TileLayer
-        attribution=
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
@@ -117,7 +116,7 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
         <Marker
           position={[coursier.lat, coursier.lng]}
           icon={L.icon({
-            iconUrl: '/images/moto-marker.png', // Assurez-vous d\'avoir cette image
+            iconUrl: '/images/moto-marker.png',
             iconSize: [32, 32],
             iconAnchor: [16, 32],
           })}
