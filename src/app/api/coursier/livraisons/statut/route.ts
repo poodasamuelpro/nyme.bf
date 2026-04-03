@@ -47,14 +47,15 @@ export async function POST(req: NextRequest) {
         total_courses: (livraison.total_courses ?? 0) + 1,
       }).eq('id', coursier_id)
 
-      // update_coursier_stats est optionnel — utiliser try/catch (PAS .catch())
+      // Correction ici : Utilisation de try/catch au lieu de .catch() pour la fonction RPC optionnelle
       try {
         await supabase.rpc('update_coursier_stats' as never, {
           p_coursier_id: coursier_id,
           p_gain: gainCoursier,
         })
-      } catch {
-        // Fonction optionnelle, on ignore si elle n'existe pas
+      } catch (e) {
+        // Fonction optionnelle, on ignore si elle n'existe pas ou échoue
+        console.warn('Note: update_coursier_stats non exécuté')
       }
     }
 
