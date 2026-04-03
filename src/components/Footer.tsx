@@ -11,7 +11,7 @@ export default function Footer() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-5 gap-8 sm:gap-10">
 
-          {/* ── Brand ── */}
+          {/* Brand */}
           <div className="col-span-2 lg:col-span-2">
             <Link href="/" className="flex items-center gap-3 mb-5">
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-nyme-orange to-[#d4691a] flex items-center justify-center shrink-0">
@@ -19,44 +19,36 @@ export default function Footer() {
               </div>
               <span className="font-heading text-xl sm:text-2xl font-extrabold text-white tracking-wider">NYME</span>
             </Link>
-
             <p className="text-white/65 text-sm font-body leading-relaxed mb-5 max-w-xs">
               La plateforme de livraison intelligente conçue pour l'Afrique de l'Ouest. Rapide, sécurisée, transparente.
             </p>
-
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-2.5 text-white/65 text-sm font-body">
+            <div className="space-y-2.5 text-white/65 text-sm">
+              <div className="flex items-center gap-2.5 font-body">
                 <MapPin size={14} className="text-nyme-orange shrink-0" />
                 <span>Ouagadougou, Burkina Faso</span>
               </div>
-              <a
-                href="tel:+22600000000"
-                className="flex items-center gap-2.5 text-white/65 text-sm hover:text-white transition-colors font-body"
-              >
+              <a href="tel:+22600000000" className="flex items-center gap-2.5 hover:text-white transition-colors font-body">
                 <Phone size={14} className="text-nyme-orange shrink-0" />
                 <span>+226 00 00 00 00</span>
               </a>
-              <a
-                href="mailto:nyme.contact@gmail.com"
-                className="flex items-center gap-2.5 text-white/65 text-sm hover:text-nyme-orange transition-colors font-body"
-              >
+              <a href="mailto:nyme.contact@gmail.com" className="flex items-center gap-2.5 hover:text-nyme-orange transition-colors font-body">
                 <Mail size={14} className="text-nyme-orange shrink-0" />
                 <span>nyme.contact@gmail.com</span>
               </a>
             </div>
           </div>
 
-          {/* ── Application ── */}
+          {/* Application */}
           <div>
             <h4 className="font-heading text-white font-bold mb-4 text-xs uppercase tracking-widest">Application</h4>
             <ul className="space-y-2.5">
-              {([
+              {[
                 ['/#clients',           'Pour les clients'],
                 ['/#coursiers',         'Pour les coursiers'],
                 ['/#comment-ca-marche', 'Comment ça marche'],
                 ['/#telecharger',       'Télécharger'],
                 ['/#tarifs',            'Tarifs'],
-              ] as [string, string][]).map(([href, label]) => (
+              ].map(([href, label]) => (
                 <li key={href}>
                   <Link href={href} className="text-white/60 text-sm hover:text-white transition-colors font-body hover:translate-x-1 inline-block">
                     {label}
@@ -66,17 +58,17 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* ── Support ── */}
+          {/* Support */}
           <div>
             <h4 className="font-heading text-white font-bold mb-4 text-xs uppercase tracking-widest">Support</h4>
             <ul className="space-y-2.5">
-              {([
+              {[
                 ['/service-client',     'Service client'],
                 ['/service-client#faq', 'FAQ'],
                 ['/contact',            'Signaler un problème'],
                 ['/#devenir-coursier',  'Devenir coursier'],
                 ['/partenaires',        'Espace partenaires'],
-              ] as [string, string][]).map(([href, label]) => (
+              ].map(([href, label]) => (
                 <li key={href}>
                   <Link
                     href={href}
@@ -93,38 +85,24 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* ── Légal + Réseaux ── */}
+          {/* Légal */}
           <div>
             <h4 className="font-heading text-white font-bold mb-4 text-xs uppercase tracking-widest">Légal</h4>
             <ul className="space-y-2.5 mb-6">
-              {([
+              {[
                 ['/politique-confidentialite',         'Confidentialité'],
                 ['/politique-application',             "Conditions d'utilisation"],
-                ['/politique-confidentialite#cookies', 'Cookies'],
-                ['/politique-application#mentions',    'Mentions légales'],
-              ] as [string, string][]).map(([href, label]) => (
+              ].map(([href, label]) => (
                 <li key={href}>
-                  <Link href={href} className="text-white/60 text-sm hover:text-white transition-colors font-body hover:translate-x-1 inline-block">
+                  <Link href={href} className="text-white/60 text-sm hover:text-white transition-colors font-body">
                     {label}
                   </Link>
                 </li>
               ))}
             </ul>
-
-            <h4 className="font-heading text-white font-bold mb-3 text-xs uppercase tracking-widest">Suivez-nous</h4>
-            <div className="flex gap-2 sm:gap-3">
-              {[
-                { Icon: Facebook,  href: 'https://facebook.com/nyme.app' },
-                { Icon: Instagram, href: 'https://instagram.com/nyme.app' },
-                { Icon: Twitter,   href: 'https://twitter.com/nyme_app' },
-              ].map(({ Icon, href }) => (
-                <a
-                  key={href}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-9 h-9 rounded-lg bg-white/8 border border-white/15 flex items-center justify-center text-white/60 hover:text-white hover:border-nyme-orange/50 hover:bg-nyme-orange/15 transition-all duration-200"
-                >
+            <div className="flex gap-3">
+              {[Facebook, Instagram, Twitter].map((Icon, i) => (
+                <a key={i} href="#" className="w-9 h-9 rounded-lg bg-white/8 border border-white/15 flex items-center justify-center text-white/60 hover:text-white hover:border-nyme-orange/50 transition-all">
                   <Icon size={15} />
                 </a>
               ))}
@@ -132,22 +110,13 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* ── Bottom bar ── */}
-        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
-          <p className="text-white/40 text-xs font-body text-center sm:text-left">
-            © {new Date().getFullYear()} NYME. Tous droits réservés. Ouagadougou, Burkina Faso.
+        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-white/40 text-xs font-body text-center">
+            © {new Date().getFullYear()} NYME. Tous droits réservés.
           </p>
-          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
-            <a
-              href="mailto:nyme.contact@gmail.com"
-              className="text-white/40 text-xs font-body hover:text-nyme-orange transition-colors"
-            >
-              nyme.contact@gmail.com
-            </a>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-white/40 text-xs font-body">Application en développement</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-white/40 text-xs font-body">Application en développement</span>
           </div>
         </div>
       </div>
