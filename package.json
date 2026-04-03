@@ -17,7 +17,10 @@
     "clsx": "^2.1.1",
     "resend": "^6.9.4",
     "@supabase/supabase-js": "^2.49.1",
-    "@supabase/auth-helpers-nextjs": "^0.10.0"
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^4.2.1",
+    "react-hot-toast": "^2.4.1"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -30,4 +33,4 @@
     "autoprefixer": "^10.0.1",
     "postcss": "^8"
   }
-} 
+}
