@@ -1,277 +1,313 @@
+// src/app/login/page.tsx  — Page login/register CLIENT uniquement
+// Rôle client garanti via metadata Supabase Auth → trigger handle_new_user
 'use client'
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { Eye, EyeOff, Zap, Phone, Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle, Package, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-type AuthMode = 'login' | 'register'
-type Role = 'client' | 'coursier'
+type Mode = 'login' | 'register'
 
-function LoginPage() {
+function LoginPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [mode, setMode] = useState<AuthMode>('login')
-  const [role, setRole] = useState<Role>('client')
+  const [mode, setMode] = useState<Mode>('login')
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({
-    nom: '', email: '', telephone: '',
-    password: '', confirmPassword: '', whatsapp: '',
-  })
+  const [showPw, setShowPw] = useState(false)
+  const [showPw2, setShowPw2] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [form, setForm] = useState({ nom: '', email: '', telephone: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    const roleParam = searchParams.get('role') as Role
-    if (roleParam === 'coursier') setRole('coursier')
     if (searchParams.get('mode') === 'register') setMode('register')
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) redirectAfterLogin(session.user.id)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
+  }, [])
 
   const redirectAfterLogin = async (userId: string) => {
     const { data } = await supabase.from('utilisateurs').select('role').eq('id', userId).single()
-    const userRole = data?.role || 'client'
+    const role = data?.role
     const redirect = searchParams.get('redirect')
-    if (redirect) { router.push(redirect); return }
-    const routes: Record<string, string> = {
-      client:    '/client/dashboard',
-      coursier:  '/coursier/dashboard',
-      partenaire:'/partenaires/dashboard',
-      admin:     '/admin-x9k2m/dashboard',
-    }
-    router.push(routes[userRole] || '/client/dashboard')
+    if (redirect) { router.replace(redirect); return }
+    if (role === 'coursier') router.replace('/coursier/dashboard-new')
+    else if (role === 'admin') router.replace('/admin-x9k2m/dashboard')
+    else router.replace('/client/dashboard') // client + partenaire non-reconnus → client
   }
 
   const validate = () => {
-    const errs: Record<string, string> = {}
-    if (!form.email.trim()) errs.email = 'Email requis'
-    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = 'Email invalide'
-    if (!form.password) errs.password = 'Mot de passe requis'
-    else if (form.password.length < 6) errs.password = 'Minimum 6 caractères'
+    const e: Record<string, string> = {}
+    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Email invalide'
+    if (!form.password || form.password.length < 6) e.password = 'Minimum 6 caractères'
     if (mode === 'register') {
-      if (!form.nom.trim()) errs.nom = 'Nom requis'
-      if (!form.telephone.trim()) errs.telephone = 'Téléphone requis'
-      if (form.password !== form.confirmPassword) errs.confirmPassword = 'Mots de passe différents'
+      if (!form.nom.trim()) e.nom = 'Nom requis'
+      if (!form.telephone.trim()) e.telephone = 'Téléphone requis'
+      if (form.password !== form.confirmPassword) e.confirmPassword = 'Mots de passe différents'
     }
-    setErrors(errs)
-    return Object.keys(errs).length === 0
+    setErrors(e)
+    return Object.keys(e).length === 0
   }
 
-  const handleLogin = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
     if (!validate()) return
     setLoading(true)
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
-      if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Email ou mot de passe incorrect' : error.message)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+      })
+      if (error) throw new Error(error.message.includes('Invalid login credentials') ? 'Email ou mot de passe incorrect' : error.message)
       if (data.user) {
+        // Vérifier que c'est bien un client (pas coursier/admin qui utiliserait ce login)
+        const { data: u } = await supabase.from('utilisateurs').select('role').eq('id', data.user.id).single()
+        if (u?.role === 'coursier') {
+          await supabase.auth.signOut()
+          throw new Error('Utilisez la page coursier pour vous connecter')
+        }
         toast.success('Connexion réussie !')
         await redirectAfterLogin(data.user.id)
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Erreur de connexion')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  const handleRegister = async () => {
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
     if (!validate()) return
     setLoading(true)
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: form.email,
+        email: form.email.trim().toLowerCase(),
         password: form.password,
-        options: { data: { nom: form.nom, telephone: form.telephone, role, whatsapp: form.whatsapp || form.telephone } },
+        options: {
+          data: {
+            nom: form.nom.trim(),
+            telephone: form.telephone.trim(),
+            role: 'client', // FORCÉ client — le trigger handle_new_user lit ce champ
+          },
+        },
       })
-      if (error) throw new Error(error.message)
-
+      if (error) throw new Error(error.message.includes('already registered') ? 'Cet email est déjà utilisé' : error.message)
       if (data.user) {
+        // Upsert manuel au cas où le trigger ne s'est pas déclenché
         await supabase.from('utilisateurs').upsert({
-          id: data.user.id, nom: form.nom, telephone: form.telephone,
-          email: form.email, role, whatsapp: form.whatsapp || form.telephone,
-          est_verifie: false, est_actif: true,
-        })
+          id: data.user.id,
+          nom: form.nom.trim(),
+          telephone: form.telephone.trim(),
+          email: form.email.trim().toLowerCase(),
+          role: 'client',
+          est_verifie: false,
+          est_actif: true,
+        }, { onConflict: 'id' })
 
-        if (role === 'coursier') {
-          await supabase.from('coursiers').upsert({
-            id: data.user.id, statut: 'hors_ligne',
-            statut_verification: 'en_attente', total_courses: 0, total_gains: 0,
-          })
-        }
-
-        await supabase.from('wallets').upsert({ user_id: data.user.id, solde: 0 })
+        // Créer wallet
+        await supabase.from('wallets').upsert({ user_id: data.user.id, solde: 0 }, { onConflict: 'user_id' })
 
         if (data.session) {
           toast.success('Compte créé !')
-          await redirectAfterLogin(data.user.id)
+          router.replace('/client/dashboard')
         } else {
-          toast('Vérifiez votre email pour confirmer votre compte', { icon: '📧' })
+          toast('Vérifiez votre email', { icon: '📧' })
           setMode('login')
         }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur inscription'
-      toast.error(msg.includes('already registered') ? 'Cet email est déjà utilisé' : msg)
-    } finally {
-      setLoading(false)
+      toast.error(err instanceof Error ? err.message : 'Erreur inscription')
+    } finally { setLoading(false) }
+  }
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true)
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?role=client`,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
+      })
+      if (error) throw error
+    } catch {
+      toast.error('Erreur connexion Google')
+      setGoogleLoading(false)
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (mode === 'login') handleLogin()
-    else handleRegister()
-  }
-
-  const inputClass = (field: string) =>
-    `w-full px-4 py-3 rounded-xl border-2 text-sm outline-none transition-colors ${errors[field] ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-primary-400'}`
+  const inp = (field: keyof typeof form) =>
+    `w-full bg-white/8 border ${errors[field] ? 'border-red-400' : 'border-white/15'} rounded-2xl px-4 py-3.5 text-white placeholder-white/40 text-sm outline-none focus:border-nyme-orange/70 focus:bg-white/12 transition-all`
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-700 via-primary-500 to-primary-400 flex items-center justify-center p-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-accent-500/20 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-nyme-dark overflow-hidden flex flex-col">
+      {/* Arrière-plan animé */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-nyme-orange/10 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-nyme-primary/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1.5s' }} />
+        <div className="absolute top-1/2 left-0 w-72 h-72 bg-nyme-violet/10 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '3s' }} />
       </div>
 
-      <div className="relative w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg">
-              <span className="text-primary-600 font-black text-2xl">N</span>
-            </div>
-            <span className="text-white font-black text-3xl">NYME</span>
-          </Link>
-          <p className="text-white/70 mt-2">Livraison Rapide &amp; Intelligente</p>
-        </div>
+      {/* Header */}
+      <header className="relative z-10 px-6 pt-8 pb-4 flex items-center justify-between max-w-md mx-auto w-full">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-nyme-orange to-orange-400 flex items-center justify-center shadow-lg">
+            <Zap size={18} className="text-white" strokeWidth={2.5} />
+          </div>
+          <span className="font-heading text-white font-extrabold text-xl tracking-wider">NYME</span>
+        </Link>
+        <Link href="/coursier/login" className="text-white/50 text-xs hover:text-white/80 transition-colors flex items-center gap-1">
+          Espace coursier <ArrowRight size={12} />
+        </Link>
+      </header>
 
-        {/* Card */}
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+      {/* Corps */}
+      <main className="flex-1 flex items-center justify-center px-4 py-6">
+        <div className="w-full max-w-md">
+          {/* Titre */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 bg-nyme-orange/15 border border-nyme-orange/30 rounded-full px-4 py-1.5 mb-4">
+              <Package size={14} className="text-nyme-orange" />
+              <span className="text-nyme-orange text-xs font-semibold">Espace Client</span>
+            </div>
+            <h1 className="font-heading text-3xl font-black text-white mb-2">
+              {mode === 'login' ? 'Bon retour 👋' : 'Créer un compte'}
+            </h1>
+            <p className="text-white/50 text-sm">
+              {mode === 'login' ? 'Connectez-vous pour commander vos livraisons' : 'Rejoignez NYME pour des livraisons express'}
+            </p>
+          </div>
+
           {/* Tabs */}
-          <div className="flex">
-            {(['login', 'register'] as AuthMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`flex-1 py-4 font-semibold text-sm transition-all ${mode === m ? 'bg-primary-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-              >
+          <div className="flex bg-white/6 rounded-2xl p-1 mb-6">
+            {(['login', 'register'] as Mode[]).map(m => (
+              <button key={m} onClick={() => { setMode(m); setErrors({}) }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${mode === m ? 'bg-nyme-orange text-white shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
                 {m === 'login' ? 'Se connecter' : 'Créer un compte'}
               </button>
             ))}
           </div>
 
-          <div className="p-6">
-            {/* Role selector */}
-            {mode === 'register' && (
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Je suis</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {([['client', '👤 Client', 'primary'], ['coursier', '🛵 Coursier', 'accent']] as const).map(([r, label, color]) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`py-3 rounded-xl font-semibold text-sm border-2 transition-all ${role === r ? `border-${color}-500 bg-${color}-50 text-${color}-600` : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Carte formulaire */}
+          <div className="glass rounded-3xl p-6 space-y-4">
+            {/* Google */}
+            <button onClick={handleGoogle} disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white hover:bg-white/90 text-gray-800 font-semibold text-sm transition-all active:scale-98 disabled:opacity-60 shadow-lg">
+              {googleLoading
+                ? <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                : <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/></svg>
+              }
+              Continuer avec Google
+            </button>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-white/10" /><span className="text-white/30 text-xs">ou</span><div className="flex-1 h-px bg-white/10" />
+            </div>
+
+            <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3">
               {mode === 'register' && (
                 <>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nom complet *</label>
-                    <input type="text" placeholder="Jean Dupont" value={form.nom}
-                      onChange={e => setForm(p => ({ ...p, nom: e.target.value }))}
-                      className={inputClass('nom')} />
-                    {errors.nom && <p className="text-red-500 text-xs mt-1">{errors.nom}</p>}
+                    <div className="relative">
+                      <User size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                      <input type="text" placeholder="Nom complet *" value={form.nom}
+                        onChange={e => setForm(p => ({ ...p, nom: e.target.value }))}
+                        className={`${inp('nom')} pl-11`} />
+                    </div>
+                    {errors.nom && <p className="text-red-400 text-xs mt-1 ml-1">{errors.nom}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Téléphone *</label>
-                    <input type="tel" placeholder="+226 XX XX XX XX" value={form.telephone}
-                      onChange={e => setForm(p => ({ ...p, telephone: e.target.value }))}
-                      className={inputClass('telephone')} />
-                    {errors.telephone && <p className="text-red-500 text-xs mt-1">{errors.telephone}</p>}
+                    <div className="relative">
+                      <Phone size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                      <input type="tel" placeholder="Téléphone +226 XX XX XX XX *" value={form.telephone}
+                        onChange={e => setForm(p => ({ ...p, telephone: e.target.value }))}
+                        className={`${inp('telephone')} pl-11`} />
+                    </div>
+                    {errors.telephone && <p className="text-red-400 text-xs mt-1 ml-1">{errors.telephone}</p>}
                   </div>
                 </>
               )}
-
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Adresse email *</label>
-                <input type="email" placeholder="vous@example.com" value={form.email} autoComplete="email"
-                  onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                  className={inputClass('email')} />
-                {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+                <div className="relative">
+                  <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                  <input type="email" placeholder="Adresse email *" value={form.email} autoComplete="email"
+                    onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                    className={`${inp('email')} pl-11`} />
+                </div>
+                {errors.email && <p className="text-red-400 text-xs mt-1 ml-1">{errors.email}</p>}
               </div>
-
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Mot de passe *</label>
-                <input type="password" value={form.password}
-                  placeholder={mode === 'login' ? '••••••••' : 'Minimum 6 caractères'}
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                  className={inputClass('password')} />
-                {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                <div className="relative">
+                  <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                  <input type={showPw ? 'text' : 'password'} placeholder="Mot de passe *" value={form.password}
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                    className={`${inp('password')} pl-11 pr-11`} />
+                  <button type="button" onClick={() => setShowPw(!showPw)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+                    {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {errors.password && <p className="text-red-400 text-xs mt-1 ml-1">{errors.password}</p>}
               </div>
-
               {mode === 'register' && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Confirmer le mot de passe *</label>
-                  <input type="password" placeholder="••••••••" value={form.confirmPassword}
-                    autoComplete="new-password"
-                    onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))}
-                    className={inputClass('confirmPassword')} />
-                  {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
+                  <div className="relative">
+                    <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                    <input type={showPw2 ? 'text' : 'password'} placeholder="Confirmer le mot de passe *"
+                      value={form.confirmPassword} autoComplete="new-password"
+                      onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))}
+                      className={`${inp('confirmPassword')} pl-11 pr-11`} />
+                    <button type="button" onClick={() => setShowPw2(!showPw2)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+                      {showPw2 ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && <p className="text-red-400 text-xs mt-1 ml-1">{errors.confirmPassword}</p>}
                 </div>
               )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-primary-500 hover:bg-primary-600 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 mt-2"
-              >
+              <button type="submit" disabled={loading}
+                className="w-full btn-primary flex items-center justify-center gap-2 py-3.5 text-sm mt-2 disabled:opacity-60 disabled:transform-none">
                 {loading
-                  ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Chargement...</>
-                  : mode === 'login' ? '🔑 Se connecter' : '🚀 Créer mon compte'
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Chargement...</>
+                  : <>{mode === 'login' ? '🔑 Se connecter' : '🚀 Créer mon compte'}<ArrowRight size={14} /></>
                 }
               </button>
             </form>
 
-            <div className="mt-4 text-center text-sm text-gray-500">
-              {mode === 'login'
-                ? <>Pas encore membre ?{' '}<button onClick={() => setMode('register')} className="text-primary-500 font-semibold hover:underline">Créer un compte</button></>
-                : <>Déjà membre ?{' '}<button onClick={() => setMode('login')} className="text-primary-500 font-semibold hover:underline">Se connecter</button></>
-              }
-            </div>
+            {mode === 'register' && (
+              <div className="flex items-start gap-2 p-3 bg-nyme-orange/10 rounded-xl border border-nyme-orange/20 mt-2">
+                <CheckCircle2 size={14} className="text-nyme-orange mt-0.5 shrink-0" />
+                <p className="text-white/60 text-xs">Votre compte sera créé avec le rôle <span className="text-nyme-orange font-semibold">Client</span>. Pour devenir coursier, utilisez <Link href="/coursier/login" className="underline hover:text-nyme-orange">l'espace coursier</Link>.</p>
+              </div>
+            )}
+          </div>
 
-            <div className="mt-6 pt-5 border-t border-gray-100 flex justify-center gap-6 text-xs text-gray-400">
-              <Link href="/partenaires/login" className="hover:text-primary-500 transition-colors">🏢 Espace Partenaire</Link>
-              <Link href="/admin-x9k2m/login" className="hover:text-gray-600 transition-colors">🔒 Admin</Link>
+          {/* Liens bas */}
+          <div className="mt-6 text-center space-y-3">
+            <div className="flex justify-center gap-6 text-xs text-white/30">
+              <Link href="/partenaires/login" className="hover:text-nyme-orange transition-colors">🏢 Espace Partenaire</Link>
+              <Link href="/coursier/login" className="hover:text-white/60 transition-colors">🛵 Espace Coursier</Link>
             </div>
+            <p className="text-white/20 text-xs">© 2024 NYME · Ouagadougou, Burkina Faso</p>
           </div>
         </div>
-
-        <p className="text-center text-white/50 text-xs mt-6">© 2024 NYME • Livraison sécurisée</p>
-      </div>
+      </main>
     </div>
   )
 }
 
-export default function LoginPageWrapper() {
+export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-primary-700 via-primary-500 to-primary-400 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+      <div className="min-h-screen bg-nyme-dark flex items-center justify-center">
+        <div className="w-10 h-10 border-3 border-white/20 border-t-nyme-orange rounded-full animate-spin" />
       </div>
     }>
-      <LoginPage />
+      <LoginPageContent />
     </Suspense>
   )
 }
