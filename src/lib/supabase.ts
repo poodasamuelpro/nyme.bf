@@ -15,8 +15,7 @@ export const supabase = createClient(URL, ANON, {
   },
 })
 
-// ── TYPES ALIGNÉS SUR LES MIGRATIONS NYME (001-006) ──────────────────
-
+// ── 1. TABLE : utilisateurs ──────────────────────────────────────────
 export type Utilisateur = {
   id:           string
   nom:          string | null
@@ -33,12 +32,12 @@ export type Utilisateur = {
   updated_at:   string
 }
 
+// ── 2. TABLE : livraisons ───────────────────────────────────────────
 export type Livraison = {
   id:                string
   client_id:         string
   coursier_id:       string | null
   statut:            'en_attente' | 'acceptee' | 'en_route_depart' | 'colis_recupere' | 'en_route_arrivee' | 'livree' | 'annulee'
-  // Noms exacts selon Migration 006
   depart_adresse:    string
   depart_lat:        number 
   depart_lng:        number
@@ -51,9 +50,14 @@ export type Livraison = {
   destinataire_nom:  string
   destinataire_tel:  string
   instructions:      string | null
+  // Champs nécessaires pour le dashboard coursier
+  livree_at:         string | null 
+  distance_km:       number | null
+  duree_estimee:     number | null
+  type:              'immediate' | 'urgente' | 'programmee' | string | null
   created_at:        string
   updated_at:        string
-  // Pour la jointure client
+  // Jointure client
   client?: {
     id: string
     nom: string | null
@@ -62,6 +66,21 @@ export type Livraison = {
   }
 }
 
+// ── 3. TABLE : coursiers ────────────────────────────────────────────
+export type Coursier = {
+  id: string // Relie à utilisateurs.id
+  statut: 'disponible' | 'en_course' | 'hors_ligne'
+  statut_verification: 'en_attente' | 'verifie' | 'rejete'
+  vehicule_type: string
+  immatriculation: string | null
+  total_courses: number
+  note_moyenne: number
+  lat_actuelle: number | null
+  lng_actuelle: number | null
+  derniere_activite: string
+}
+
+// ── 4. TABLE : partenaires ──────────────────────────────────────────
 export type PartenaireRow = {
   id:               string
   user_id:          string
@@ -81,6 +100,7 @@ export type PartenaireRow = {
   updated_at:       string
 }
 
+// ── 5. TABLE : livraisons_partenaire ───────────────────────────────
 export type LivraisonPartenaireRow = {
   id:               string
   partenaire_id:    string
@@ -102,31 +122,7 @@ export type LivraisonPartenaireRow = {
   updated_at:       string
 }
 
-export interface PropositionPrix {
-  id: string
-  livraison_id: string
-  auteur_id: string
-  role_auteur: 'client' | 'coursier'
-  montant: number
-  statut: 'en_attente' | 'accepte' | 'refuse'
-  created_at: string
-}
-
-// ── TYPES AJOUTÉS POUR LE DASHBOARD COURSIER (Corrections Vercel) ──
-
-export type Coursier = {
-  id: string
-  statut: 'disponible' | 'en_course' | 'hors_ligne'
-  statut_verification: 'en_attente' | 'verifie' | 'rejete'
-  vehicule_type: string
-  immatriculation: string | null
-  total_courses: number
-  note_moyenne: number
-  lat_actuelle: number | null
-  lng_actuelle: number | null
-  derniere_activite: string
-}
-
+// ── 6. TABLES : Wallets & Notifications ─────────────────────────────
 export type Wallet = {
   id: string
   user_id: string
@@ -156,8 +152,18 @@ export type Notification = {
   created_at: string
 }
 
-// ── HELPERS ────────────────────────────────────────────────────────
+// ── TYPES ADDITIONNELS ──────────────────────────────────────────────
+export interface PropositionPrix {
+  id: string
+  livraison_id: string
+  auteur_id: string
+  role_auteur: 'client' | 'coursier'
+  montant: number
+  statut: 'en_attente' | 'accepte' | 'refuse'
+  created_at: string
+}
 
+// ── HELPERS ────────────────────────────────────────────────────────
 export async function getUtilisateur(userId: string): Promise<Utilisateur | null> {
   const { data, error } = await supabase
     .from('utilisateurs')
