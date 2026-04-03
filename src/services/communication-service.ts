@@ -10,19 +10,22 @@ export interface Message {
   lu: boolean;
 }
 
+// Alias avec auteur jointé (pour les pages chat)
+export type MessageWithAuthor = Message & {
+  expediteur?: { nom: string; avatar_url?: string }
+}
+
 export interface Conversation {
   interlocuteur_id: string;
   interlocuteur_nom: string;
+  interlocuteur_avatar?: string;
   dernier_message: string;
   dernier_message_date: string;
-  messages_non_lus: number; // renommé pour cohérence avec les pages
+  messages_non_lus: number;
 }
 
 class CommunicationService {
 
-  /**
-   * Envoie un message entre deux utilisateurs.
-   */
   async sendMessage(
     expediteurId: string,
     destinataireId: string,
@@ -47,18 +50,15 @@ class CommunicationService {
     return data;
   }
 
-  /**
-   * Récupère tous les messages d'une conversation entre deux utilisateurs.
-   * livraisonId est optionnel — si absent, récupère tous les messages entre les deux users.
-   */
+  // livraisonId optionnel — chat général ou chat lié à une livraison
   async getConversation(
     userId1: string,
     userId2: string,
     livraisonId?: string
-  ): Promise<Message[]> {
+  ): Promise<MessageWithAuthor[]> {
     let query = supabase
       .from("messages")
-      .select("*")
+      .select("*, expediteur:expediteur_id(nom, avatar_url)")
       .or(
         `and(expediteur_id.eq.${userId1},destinataire_id.eq.${userId2}),and(expediteur_id.eq.${userId2},destinataire_id.eq.${userId1})`
       )
@@ -74,12 +74,9 @@ class CommunicationService {
       console.error("[CommunicationService] getConversation:", error);
       throw new Error("Impossible de récupérer la conversation.");
     }
-    return data || [];
+    return (data || []) as MessageWithAuthor[];
   }
 
-  /**
-   * Marque les messages reçus comme lus.
-   */
   async markMessagesAsRead(
     destinataireId: string,
     expediteurId: string,
@@ -97,17 +94,10 @@ class CommunicationService {
     }
 
     const { error } = await query;
-
-    if (error) {
-      console.error("[CommunicationService] markMessagesAsRead:", error);
-      // On ne throw pas ici pour ne pas bloquer l'UI
-    }
+    if (error) console.error("[CommunicationService] markMessagesAsRead:", error);
   }
 
-  /**
-   * Récupère la liste des conversations d'un utilisateur.
-   * Alias getUserConversations pour compatibilité.
-   */
+  // Alias pour compatibilité
   async getUserConversations(userId: string): Promise<Conversation[]> {
     return this.getConversationsList(userId);
   }
@@ -116,16 +106,14 @@ class CommunicationService {
     const { data: messages, error } = await supabase
       .from("messages")
       .select(
-        `*,
-        expediteur:expediteur_id(id, nom, avatar_url),
-        destinataire:destinataire_id(id, nom, avatar_url)`
+        `*, expediteur:expediteur_id(id, nom, avatar_url), destinataire:destinataire_id(id, nom, avatar_url)`
       )
       .or(`expediteur_id.eq.${userId},destinataire_id.eq.${userId}`)
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("[CommunicationService] getConversationsList:", error);
-      throw new Error("Impossible de récupérer la liste des conversations.");
+      throw new Error("Impossible de récupérer les conversations.");
     }
 
     const conversationsMap = new Map<string, Conversation>();
@@ -148,6 +136,7 @@ class CommunicationService {
         conversationsMap.set(interlocuteurId, {
           interlocuteur_id: interlocuteurId,
           interlocuteur_nom: interlocuteur?.nom ?? "Inconnu",
+          interlocuteur_avatar: interlocuteur?.avatar_url,
           dernier_message: msg.contenu,
           dernier_message_date: msg.created_at,
           messages_non_lus: nonLusCount,
@@ -158,9 +147,6 @@ class CommunicationService {
     return Array.from(conversationsMap.values());
   }
 
-  /**
-   * Génère un lien WhatsApp pour le Burkina Faso (+226 par défaut).
-   */
   getWhatsAppLink(phoneNumber: string): string {
     const cleaned = phoneNumber.replace(/\D/g, "");
     const international = cleaned.startsWith("226") ? cleaned : `226${cleaned}`;
