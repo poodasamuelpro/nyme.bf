@@ -53,6 +53,13 @@ export type Livraison = {
   instructions:      string | null
   created_at:        string
   updated_at:        string
+  // Pour la jointure client
+  client?: {
+    id: string
+    nom: string | null
+    telephone: string | null
+    avatar_url: string | null
+  }
 }
 
 export type PartenaireRow = {
@@ -102,6 +109,50 @@ export interface PropositionPrix {
   role_auteur: 'client' | 'coursier'
   montant: number
   statut: 'en_attente' | 'accepte' | 'refuse'
+  created_at: string
+}
+
+// ── TYPES AJOUTÉS POUR LE DASHBOARD COURSIER (Corrections Vercel) ──
+
+export type Coursier = {
+  id: string
+  statut: 'disponible' | 'en_course' | 'hors_ligne'
+  statut_verification: 'en_attente' | 'verifie' | 'rejete'
+  vehicule_type: string
+  immatriculation: string | null
+  total_courses: number
+  note_moyenne: number
+  lat_actuelle: number | null
+  lng_actuelle: number | null
+  derniere_activite: string
+}
+
+export type Wallet = {
+  id: string
+  user_id: string
+  solde: number
+  devise: string
+  created_at: string
+  updated_at: string
+}
+
+export type TransactionWallet = {
+  id: string
+  user_id: string
+  montant: number
+  type: 'depot' | 'retrait' | 'gain_course' | 'commission'
+  statut: 'succes' | 'en_attente' | 'echec'
+  note: string | null
+  created_at: string
+}
+
+export type Notification = {
+  id: string
+  user_id: string
+  titre: string
+  message: string
+  type: string
+  lu: boolean
   created_at: string
 }
 
