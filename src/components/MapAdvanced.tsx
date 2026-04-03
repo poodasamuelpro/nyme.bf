@@ -45,6 +45,19 @@ const RecenterAutomatically = ({ center, zoom }: { center: LatLngTuple; zoom: nu
   return null
 }
 
+// Composant pour gérer le clic sur la carte
+const MapClickHandler = ({ onClick }: { onClick?: (e: L.LeafletMouseEvent) => void }) => {
+  const map = useMap()
+  useEffect(() => {
+    if (!onClick) return
+    map.on('click', onClick)
+    return () => {
+      map.off('click', onClick)
+    }
+  }, [map, onClick])
+  return null
+}
+
 const MapAdvanced: React.FC<MapAdvancedProps> = ({
   depart,
   arrivee,
@@ -72,8 +85,8 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
     if (onLocationSelect) {
       try {
         const results = await mapService.geocode(`${e.latlng.lat},${e.latlng.lng}`)
-        if (results && results.address) {
-          onLocationSelect(e.latlng.lat, e.latlng.lng, results.address)
+        if (results && results.length > 0 && results[0].address) {
+          onLocationSelect(e.latlng.lat, e.latlng.lng, results[0].address)
         } else {
           onLocationSelect(e.latlng.lat, e.latlng.lng, `Lat: ${e.latlng.lat.toFixed(4)}, Lng: ${e.latlng.lng.toFixed(4)}`)
         }
@@ -93,8 +106,8 @@ const MapAdvanced: React.FC<MapAdvancedProps> = ({
       scrollWheelZoom={true}
       style={{ height: '100%', width: '100%' }}
       ref={mapRef}
-      onClick={handleMapClick}
     >
+      <MapClickHandler onClick={handleMapClick} />
       <RecenterAutomatically center={mapCenter} zoom={zoom} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
