@@ -123,10 +123,10 @@ export default function HeroSection() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-3 sm:gap-4 mb-8 sm:mb-10">
-              <a href="#telecharger" className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-nyme-orange to-[#d4691a] text-white font-bold text-sm sm:text-base hover:shadow-xl hover:shadow-nyme-orange/35 transition-all duration-300 hover:-translate-y-1 font-body">
+              <a href="/client/login" className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-nyme-orange to-[#d4691a] text-white font-bold text-sm sm:text-base hover:shadow-xl hover:shadow-nyme-orange/35 transition-all duration-300 hover:-translate-y-1 font-body">
                 Commander maintenant <ArrowRight size={16} />
               </a>
-              <a href="/#devenir-coursier" className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3.5 sm:py-4 rounded-2xl glass border border-white/22 text-white font-semibold text-sm sm:text-base hover:border-nyme-orange/45 transition-all duration-300 font-body">
+              <a href="/coursier/login" className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3.5 sm:py-4 rounded-2xl glass border border-white/22 text-white font-semibold text-sm sm:text-base hover:border-nyme-orange/45 transition-all duration-300 font-body">
                 Devenir coursier
               </a>
             </div>
