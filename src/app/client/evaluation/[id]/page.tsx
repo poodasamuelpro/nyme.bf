@@ -13,21 +13,29 @@ export default function EvaluationPage() {
 
   const [livraison, setLivraison] = useState<Livraison | null>(null)
   const [coursier, setCoursier] = useState<Utilisateur | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [rating, setRating] = useState(5)
-  const [comment, setComment] = useState('')
+  const [loading, setLoading]   = useState(true)
+  const [rating, setRating]     = useState(5)
+  const [comment, setComment]   = useState('')
   const [reportReason, setReportReason] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [submitting, setSubmitting]     = useState(false)
   const [tab, setTab] = useState<'evaluation' | 'report'>('evaluation')
 
   useEffect(() => {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data } = await supabase.from('livraisons')
-        .select('*, coursier:coursier_id(id, nom, avatar_url, note_moyenne)')
-        .eq('id', livraisonId).single()
-      if (!data || data.client_id !== session.user.id) { router.push('/client/dashboard'); return }
+
+      // Jointure coursier_id → utilisateurs
+      const { data } = await supabase
+        .from('livraisons')
+        .select('*, coursier:coursier_id(id, nom, avatar_url, note_moyenne, telephone)')
+        .eq('id', livraisonId)
+        .single()
+
+      if (!data || data.client_id !== session.user.id) {
+        router.push('/client/dashboard')
+        return
+      }
       setLivraison(data as Livraison)
       setCoursier(data.coursier as Utilisateur)
       setLoading(false)
@@ -39,20 +47,29 @@ export default function EvaluationPage() {
     if (!livraison || !coursier) return
     setSubmitting(true)
     try {
+      // Table evaluations — colonnes exactes du schéma SQL
+      // Note : pas de colonne "type" dans le schéma evaluations
       const { error } = await supabase.from('evaluations').insert({
-        livraison_id: livraisonId,
+        livraison_id:  livraisonId,
         evaluateur_id: livraison.client_id,
-        evalue_id: coursier.id,
-        note: rating,
-        commentaire: comment,
-        type: 'client_vers_coursier',
+        evalue_id:     coursier.id,
+        note:          rating,
+        commentaire:   comment || null,
       })
       if (error) throw error
 
-      const { data: evaluations } = await supabase.from('evaluations').select('note').eq('evalue_id', coursier.id)
+      // Mise à jour note_moyenne dans utilisateurs
+      const { data: evaluations } = await supabase
+        .from('evaluations')
+        .select('note')
+        .eq('evalue_id', coursier.id)
+
       if (evaluations?.length) {
         const avg = evaluations.reduce((s, e) => s + e.note, 0) / evaluations.length
-        await supabase.from('utilisateurs').update({ note_moyenne: parseFloat(avg.toFixed(2)) }).eq('id', coursier.id)
+        await supabase
+          .from('utilisateurs')
+          .update({ note_moyenne: parseFloat(avg.toFixed(2)) })
+          .eq('id', coursier.id)
       }
 
       toast.success('Évaluation enregistrée !')
@@ -62,16 +79,20 @@ export default function EvaluationPage() {
   }
 
   const handleSubmitReport = async () => {
-    if (!livraison || !coursier || !reportReason) { toast.error('Sélectionnez un motif'); return }
+    if (!livraison || !coursier || !reportReason) {
+      toast.error('Sélectionnez un motif')
+      return
+    }
     setSubmitting(true)
     try {
+      // Table signalements — colonne : signalant_id (pas signalataire_id)
       const { error } = await supabase.from('signalements').insert({
         livraison_id: livraisonId,
-        signalataire_id: livraison.client_id,
-        signale_id: coursier.id,
-        motif: reportReason,
-        description: comment,
-        statut: 'en_attente',
+        signalant_id: livraison.client_id,   // ← colonne correcte
+        signale_id:   coursier.id,
+        motif:        reportReason,
+        description:  comment || null,
+        statut:       'en_attente',
       })
       if (error) throw error
       toast.success('Signalement enregistré.')
@@ -80,7 +101,11 @@ export default function EvaluationPage() {
     finally { setSubmitting(false) }
   }
 
-  if (loading) return <div className="min-h-screen bg-primary-600 flex items-center justify-center"><div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return (
+    <div className="min-h-screen bg-primary-600 flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
   if (!livraison || !coursier) return null
 
   return (
@@ -89,7 +114,10 @@ export default function EvaluationPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <div className="flex items-center gap-3 h-16">
             <button onClick={() => router.back()} className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">←</button>
-            <div><h1 className="font-bold">Évaluation</h1><p className="text-white/60 text-xs">#{livraisonId.slice(0, 8).toUpperCase()}</p></div>
+            <div>
+              <h1 className="font-bold">Évaluation</h1>
+              <p className="text-white/60 text-xs">#{livraisonId.slice(0, 8).toUpperCase()}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -107,8 +135,13 @@ export default function EvaluationPage() {
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24 space-y-6">
         <div className="bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4">
-          <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 font-bold text-2xl">{coursier.nom?.charAt(0) || '?'}</div>
-          <div><h2 className="text-xl font-bold text-gray-900">{coursier.nom}</h2><p className="text-sm text-gray-500">⭐ {coursier.note_moyenne || 'Nouveau'}/5</p></div>
+          <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 font-bold text-2xl">
+            {coursier.nom?.charAt(0) || '?'}
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">{coursier.nom}</h2>
+            <p className="text-sm text-gray-500">⭐ {coursier.note_moyenne || 'Nouveau'}/5</p>
+          </div>
         </div>
 
         {tab === 'evaluation' && (
@@ -116,8 +149,9 @@ export default function EvaluationPage() {
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <label className="block text-sm font-semibold text-gray-700 mb-4">Note</label>
               <div className="flex gap-2 justify-center mb-3">
-                {[1,2,3,4,5].map(star => (
-                  <button key={star} onClick={() => setRating(star)} className="text-4xl transition-transform hover:scale-125">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button key={star} onClick={() => setRating(star)}
+                    className="text-4xl transition-transform hover:scale-125">
                     {star <= rating ? '⭐' : '☆'}
                   </button>
                 ))}
@@ -126,12 +160,13 @@ export default function EvaluationPage() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Commentaire (optionnel)</label>
-              <textarea placeholder="Partagez votre expérience..." value={comment} onChange={e => setComment(e.target.value)}
+              <textarea placeholder="Partagez votre expérience..." value={comment}
+                onChange={e => setComment(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400 resize-none h-24" />
             </div>
             <button onClick={handleSubmitEvaluation} disabled={submitting}
               className="w-full py-4 rounded-xl bg-primary-500 text-white font-bold hover:bg-primary-600 disabled:opacity-50">
-              {submitting ? 'Enregistrement...' : '✅ Enregistrer l\'évaluation'}
+              {submitting ? 'Enregistrement...' : "✅ Enregistrer l'évaluation"}
             </button>
           </div>
         )}
@@ -156,7 +191,8 @@ export default function EvaluationPage() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Détails (optionnel)</label>
-              <textarea placeholder="Décrivez le problème..." value={comment} onChange={e => setComment(e.target.value)}
+              <textarea placeholder="Décrivez le problème..." value={comment}
+                onChange={e => setComment(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400 resize-none h-24" />
             </div>
             <button onClick={handleSubmitReport} disabled={submitting || !reportReason}
