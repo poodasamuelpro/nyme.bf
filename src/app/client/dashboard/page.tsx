@@ -1,4 +1,4 @@
-// src/app/client/dashboard/page.tsx
+// src/app/client/dashboard/page.tsx 
 // Vérification rôle côté page — pas dans le middleware
 'use client'
 import { useState, useEffect, useCallback } from 'react'
