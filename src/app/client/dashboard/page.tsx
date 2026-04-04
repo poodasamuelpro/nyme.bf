@@ -38,7 +38,7 @@ const fDate  = (d: string) => new Intl.DateTimeFormat('fr-FR', { day: '2-digit',
 // ── GOOGLE MAPS COMPONENT ────────────────────────────────────────────────
 declare global {
   interface Window {
-    google: typeof google;
+    google: any;  // Ça marche immédiatement
     initGoogleMap?: () => void;
   }
 }
