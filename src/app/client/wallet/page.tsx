@@ -32,19 +32,30 @@ export default function ClientWalletPage() {
   const [methodePmt,   setMethodePmt]   = useState<'mobile_money' | 'carte'>('mobile_money')
   const [submitting,   setSubmitting]   = useState(false)
 
-  const fXOF = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
-  const fDate = (d: string) => new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(d))
+  const fXOF  = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
+  const fDate = (d: string) => new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+  }).format(new Date(d))
 
   const loadData = useCallback(async (uid: string) => {
     const { data: w } = await supabase.from('wallets').select('*').eq('user_id', uid).single()
-    if (w) setWallet(w as Wallet)
-    else {
-      const { data: created } = await supabase.from('wallets').insert({ user_id: uid, solde: 0 }).select().single()
+    if (w) {
+      setWallet(w as Wallet)
+    } else {
+      // Créer le wallet s'il n'existe pas
+      const { data: created } = await supabase
+        .from('wallets')
+        .insert({ user_id: uid, solde: 0 })
+        .select()
+        .single()
       if (created) setWallet(created as Wallet)
     }
     const { data: txs } = await supabase
-      .from('transactions_wallet').select('*').eq('user_id', uid)
-      .order('created_at', { ascending: false }).limit(50)
+      .from('transactions_wallet')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50)
     setTransactions((txs || []) as TransactionWallet[])
   }, [])
 
@@ -52,9 +63,15 @@ export default function ClientWalletPage() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.replace('/login'); return }
-      // Vérif rôle
-      const { data: u } = await supabase.from('utilisateurs').select('role').eq('id', session.user.id).single()
-      if (!u || (u.role !== 'client' && u.role !== 'coursier')) { router.replace('/login'); return }
+      const { data: u } = await supabase
+        .from('utilisateurs')
+        .select('role')
+        .eq('id', session.user.id)
+        .single()
+      if (!u || (u.role !== 'client' && u.role !== 'coursier')) {
+        router.replace('/login')
+        return
+      }
       setUserId(session.user.id)
       await loadData(session.user.id)
       setLoading(false)
@@ -62,33 +79,49 @@ export default function ClientWalletPage() {
     init()
   }, [router, loadData])
 
+  // handleRecharge : redirige vers WhatsApp pendant la période sans CinetPay
+  // La RPC process_wallet_transaction existe en SQL mais le paiement Mobile Money
+  // n'est pas encore intégré (CinetPay). En attendant → WhatsApp manuel.
   const handleRecharge = async () => {
-    if (!userId || montant < 500) { toast.error('Montant minimum 500 XOF'); return }
+    if (!userId || montant < 500) {
+      toast.error('Montant minimum 500 XOF')
+      return
+    }
     setSubmitting(true)
     try {
-      // Appel à la fonction RPC atomique Supabase
-      const { error } = await supabase.rpc('process_wallet_transaction', {
-        p_user_id:      userId,
-        p_type:         'recharge',
-        p_montant:      montant,
-        p_reference:    `RECHARGE_${userId}_${Date.now()}`,
-        p_note:         `Recharge ${methodePmt === 'mobile_money' ? 'Mobile Money' : 'Carte'} — ${fXOF(montant)}`,
-        p_payment_method: methodePmt,
-      })
-      if (error) throw new Error(error.message)
-      toast.success(`Wallet rechargé de ${fXOF(montant)} !`)
+      const methodeLabel = methodePmt === 'mobile_money' ? 'Mobile Money (Orange/Wave/Moov)' : 'Carte bancaire'
+      const message = encodeURIComponent(
+        `Bonjour NYME 👋\n\nJe souhaite recharger mon wallet de ${fXOF(montant)} via ${methodeLabel}.\n\nMon ID: ${userId.slice(0, 8).toUpperCase()}\n\nMerci de traiter ma demande.`
+      )
+      window.open(`https://wa.me/22600000000?text=${message}`, '_blank')
+      toast.success('Redirection vers WhatsApp — NYME traitera votre recharge sous 30 min')
       setShowRecharge(false)
-      await loadData(userId)
-    } catch (err: unknown) {
-      toast.error('Erreur recharge — contactez le support NYME')
-      console.error(err)
-    } finally { setSubmitting(false) }
+    } finally {
+      setSubmitting(false)
+    }
+
+    // TODO : Décommenter quand CinetPay sera intégré
+    // const { error } = await supabase.rpc('process_wallet_transaction', {
+    //   p_user_id: userId,
+    //   p_type: 'recharge',
+    //   p_montant: montant,
+    //   p_reference: `RECHARGE_${userId}_${Date.now()}`,
+    //   p_note: `Recharge ${methodePmt} — ${fXOF(montant)}`,
+    //   p_payment_method: methodePmt,
+    // })
+    // if (error) throw new Error(error.message)
   }
 
   const stats = {
-    totalCredits:  transactions.filter(t => TX_CFG[t.type]?.credit).reduce((s, t) => s + t.montant, 0),
-    totalDebits:   transactions.filter(t => !TX_CFG[t.type]?.credit).reduce((s, t) => s + Math.abs(t.montant), 0),
-    txCeMois:      transactions.filter(t => new Date(t.created_at).getMonth() === new Date().getMonth()).length,
+    totalCredits: transactions
+      .filter(t => TX_CFG[t.type]?.credit)
+      .reduce((s, t) => s + t.montant, 0),
+    totalDebits: transactions
+      .filter(t => !TX_CFG[t.type]?.credit)
+      .reduce((s, t) => s + Math.abs(t.montant), 0),
+    txCeMois: transactions
+      .filter(t => new Date(t.created_at).getMonth() === new Date().getMonth())
+      .length,
   }
 
   if (loading) return (
@@ -99,24 +132,34 @@ export default function ClientWalletPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header avec bouton retour */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
-          <button onClick={() => router.back()} className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200">
+          <button
+            onClick={() => router.back()}
+            className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+          >
             <ArrowLeft size={16} className="text-gray-700" />
           </button>
           <div className="flex-1">
             <h1 className="font-heading font-bold text-gray-900">Mon Wallet</h1>
           </div>
-          <button onClick={async () => { setRefreshing(true); if (userId) await loadData(userId); setRefreshing(false) }}
-            className="p-2 rounded-xl hover:bg-gray-100">
+          <button
+            onClick={async () => {
+              setRefreshing(true)
+              if (userId) await loadData(userId)
+              setRefreshing(false)
+            }}
+            className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
+          >
             <RefreshCw size={16} className={`text-gray-500 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6 pb-24 space-y-5">
-        {/* Carte solde principale */}
+
+        {/* Carte solde */}
         <div className="bg-gradient-to-br from-nyme-primary to-nyme-primary-dark rounded-3xl p-8 text-white shadow-xl overflow-hidden relative">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full" />
           <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white/5 rounded-full" />
@@ -143,13 +186,22 @@ export default function ClientWalletPage() {
 
         {/* Actions */}
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => setShowRecharge(true)}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:border-blue-200 hover:shadow-md transition-all">
-            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><CreditCard size={18} className="text-blue-600" /></div>
+          <button
+            onClick={() => setShowRecharge(true)}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:border-blue-200 hover:shadow-md transition-all"
+          >
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+              <CreditCard size={18} className="text-blue-600" />
+            </div>
             <p className="font-bold text-gray-900 text-sm">Recharger</p>
           </button>
-          <button disabled className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-2 opacity-50 cursor-not-allowed">
-            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center"><Banknote size={18} className="text-gray-500" /></div>
+          <button
+            disabled
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-2 opacity-50 cursor-not-allowed"
+          >
+            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+              <Banknote size={18} className="text-gray-500" />
+            </div>
             <p className="font-bold text-gray-900 text-sm">Retirer</p>
             <p className="text-gray-400 text-xs -mt-1">Bientôt</p>
           </button>
@@ -164,9 +216,17 @@ export default function ClientWalletPage() {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Méthode de paiement</p>
               <div className="grid grid-cols-2 gap-2">
-                {([['mobile_money', '📱 Mobile Money', 'Orange, Wave, Moov'], ['carte', '💳 Carte bancaire', 'Visa, Mastercard']] as const).map(([m, label, sub]) => (
-                  <button key={m} onClick={() => setMethodePmt(m)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${methodePmt === m ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                {([
+                  ['mobile_money', '📱 Mobile Money', 'Orange, Wave, Moov'],
+                  ['carte',        '💳 Carte bancaire', 'Visa, Mastercard'],
+                ] as const).map(([m, label, sub]) => (
+                  <button
+                    key={m}
+                    onClick={() => setMethodePmt(m)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      methodePmt === m ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
                     <p className="font-bold text-sm text-gray-900">{label}</p>
                     <p className="text-xs text-gray-400">{sub}</p>
                   </button>
@@ -179,8 +239,15 @@ export default function ClientWalletPage() {
               <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Montant rapide</p>
               <div className="grid grid-cols-3 gap-2">
                 {MONTANTS_RAPIDES.map(m => (
-                  <button key={m} onClick={() => setMontant(m)}
-                    className={`py-2 rounded-xl text-sm font-semibold border-2 transition-all ${montant === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                  <button
+                    key={m}
+                    onClick={() => setMontant(m)}
+                    className={`py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                      montant === m
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
                     {m.toLocaleString()}
                   </button>
                 ))}
@@ -190,22 +257,39 @@ export default function ClientWalletPage() {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Ou saisissez un montant</p>
               <div className="relative">
-                <input type="number" min={500} step={500} value={montant}
+                <input
+                  type="number"
+                  min={500}
+                  step={500}
+                  value={montant}
                   onChange={e => setMontant(Number(e.target.value))}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 pr-16" />
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 pr-16"
+                />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">XOF</span>
               </div>
             </div>
 
             <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
-              <p className="text-amber-700 text-xs">⚠️ Paiement Mobile Money en cours d'intégration. Contactez <a href="https://wa.me/22600000000" className="underline font-semibold">NYME sur WhatsApp</a> pour recharger manuellement.</p>
+              <p className="text-amber-700 text-xs font-semibold mb-1">⚠️ Recharge via WhatsApp</p>
+              <p className="text-amber-600 text-xs">
+                Le paiement automatique est en cours d'intégration. En cliquant "Recharger",
+                vous serez redirigé vers WhatsApp pour une recharge manuelle traitée sous 30 min.
+              </p>
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setShowRecharge(false)} className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700">Annuler</button>
-              <button onClick={handleRecharge} disabled={submitting || montant < 500}
-                className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50">
-                {submitting ? 'Traitement...' : `Recharger ${fXOF(montant)}`}
+              <button
+                onClick={() => setShowRecharge(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleRecharge}
+                disabled={submitting || montant < 500}
+                className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {submitting ? 'Ouverture...' : `💬 Recharger ${fXOF(montant)}`}
               </button>
             </div>
           </div>
@@ -226,14 +310,22 @@ export default function ClientWalletPage() {
               {transactions.map(tx => {
                 const cfg = TX_CFG[tx.type] || { label: tx.type, icon: '💳', credit: tx.montant > 0 }
                 return (
-                  <div key={tx.id} className="flex items-center gap-4 p-4 hover:bg-gray-50">
-                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg shrink-0">{cfg.icon}</div>
+                  <div key={tx.id} className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg shrink-0">
+                      {cfg.icon}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 text-sm">{cfg.label}</p>
                       {tx.note && <p className="text-gray-400 text-xs truncate">{tx.note}</p>}
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-gray-400 text-xs">{fDate(tx.created_at)}</p>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${tx.status === 'completed' ? 'bg-green-100 text-green-700' : tx.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                          tx.status === 'completed'
+                            ? 'bg-green-100 text-green-700'
+                            : tx.status === 'pending'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
                           {tx.status === 'completed' ? '✓' : tx.status === 'pending' ? '⏳' : '✗'}
                         </span>
                       </div>
