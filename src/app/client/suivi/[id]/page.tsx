@@ -1,6 +1,6 @@
 // src/app/client/suivi/[id]/page.tsx
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -14,11 +14,11 @@ import toast from 'react-hot-toast'
 
 const MapAdvanced = dynamic(() => import('@/components/MapAdvanced'), { ssr: false })
 
-// Livraison avec jointure coursier depuis utilisateurs
 interface LivraisonWithDetails extends Livraison {
   coursier?: Pick<Utilisateur, 'id' | 'nom' | 'avatar_url' | 'note_moyenne' | 'telephone' | 'whatsapp'>
 }
 
+// Inclut 'en_rout_depart' (orthographe réelle de la BDD)
 const STATUT_COLORS: Record<string, string> = {
   en_attente:       'bg-yellow-100 text-yellow-700',
   acceptee:         'bg-blue-100 text-blue-700',
@@ -32,32 +32,42 @@ const STATUT_COLORS: Record<string, string> = {
 const STATUT_LABELS: Record<string, string> = {
   en_attente:       "⏳ En attente d'un coursier",
   acceptee:         '✅ Course acceptée',
-  en_rout_depart:   '🛵 Coursier en route',
+  en_rout_depart:   '🛵 Coursier en route vers le colis',
   colis_recupere:   '📦 Colis récupéré',
   en_route_arrivee: '🚀 En cours de livraison',
   livree:           '🎉 Livraison effectuée',
   annulee:          '❌ Annulée',
 }
 
+// Étapes de progression visuelles
+const STATUT_STEPS = ['acceptee', 'en_rout_depart', 'colis_recupere', 'en_route_arrivee', 'livree']
+
 export default function SuiviPage() {
   const params = useParams()
   const router = useRouter()
   const livraisonId = params.id as string
 
-  const [livraison, setLivraison] = useState<LivraisonWithDetails | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [route, setRoute] = useState<RouteResult | null>(null)
-  const [showChat, setShowChat] = useState(false)
-  const [messages, setMessages] = useState<MessageWithAuthor[]>([])
-  const [newMessage, setNewMessage] = useState('')
+  const [livraison, setLivraison]     = useState<LivraisonWithDetails | null>(null)
+  const [loading, setLoading]         = useState(true)
+  const [route, setRoute]             = useState<RouteResult | null>(null)
+  const [showChat, setShowChat]       = useState(false)
+  const [messages, setMessages]       = useState<MessageWithAuthor[]>([])
+  const [newMessage, setNewMessage]   = useState('')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+  // Position GPS du coursier en temps réel
+  const [coursierLat, setCoursierLat] = useState<number | null>(null)
+  const [coursierLng, setCoursierLng] = useState<number | null>(null)
+  const [coursierNom, setCoursierNom] = useState<string>('')
+
+  // Ref pour stocker le canal GPS (cleanup)
+  const gpsChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
   const loadData = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
     setCurrentUserId(session.user.id)
 
-    // Jointure : coursier_id → utilisateurs (id, nom, avatar_url, note_moyenne, telephone, whatsapp)
     const { data } = await supabase
       .from('livraisons')
       .select('*, coursier:coursier_id(id, nom, avatar_url, note_moyenne, telephone, whatsapp)')
@@ -70,7 +80,7 @@ export default function SuiviPage() {
     }
     setLivraison(data as LivraisonWithDetails)
 
-    // Calcul itinéraire avec les bons noms de colonnes
+    // Calcul itinéraire
     if (data.depart_lat && data.arrivee_lat) {
       try {
         const r = await mapService.getRoute(
@@ -78,7 +88,7 @@ export default function SuiviPage() {
           data.arrivee_lat, data.arrivee_lng
         )
         setRoute(r)
-      } catch { /* ignore */ }
+      } catch {}
     }
 
     // Messages si coursier assigné
@@ -87,21 +97,90 @@ export default function SuiviPage() {
         session.user.id, data.coursier_id, livraisonId
       )
       setMessages(msgs)
+      setCoursierNom((data as LivraisonWithDetails).coursier?.nom || 'Coursier')
     }
 
     setLoading(false)
   }, [livraisonId, router])
 
+  // Subscribe GPS coursier en temps réel
+  const subscribeGps = useCallback(async (coursierId: string, nom: string) => {
+    // Nettoyage du canal précédent
+    if (gpsChannelRef.current) {
+      await supabase.removeChannel(gpsChannelRef.current)
+      gpsChannelRef.current = null
+    }
+
+    // Récupérer la dernière position connue immédiatement
+    const { data: lastPos } = await supabase
+      .from('localisation_coursier')
+      .select('latitude, longitude')
+      .eq('coursier_id', coursierId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (lastPos) {
+      setCoursierLat(lastPos.latitude)
+      setCoursierLng(lastPos.longitude)
+      setCoursierNom(nom)
+    }
+
+    // Subscribe aux nouvelles insertions GPS en temps réel
+    const channel = supabase
+      .channel(`gps-${coursierId}-${livraisonId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'localisation_coursier',
+          filter: `coursier_id=eq.${coursierId}`,
+        },
+        (payload) => {
+          const pos = payload.new as { latitude: number; longitude: number }
+          setCoursierLat(pos.latitude)
+          setCoursierLng(pos.longitude)
+        }
+      )
+      .subscribe()
+
+    gpsChannelRef.current = channel
+  }, [livraisonId])
+
   useEffect(() => {
     loadData()
-    const channel = supabase.channel(`suivi-${livraisonId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'livraisons',
-        filter: `id=eq.${livraisonId}`,
-      }, () => loadData())
+
+    // Subscribe aux updates de la livraison
+    const livraisonChannel = supabase
+      .channel(`suivi-${livraisonId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'livraisons',
+          filter: `id=eq.${livraisonId}`,
+        },
+        () => loadData()
+      )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    return () => {
+      supabase.removeChannel(livraisonChannel)
+      if (gpsChannelRef.current) {
+        supabase.removeChannel(gpsChannelRef.current)
+        gpsChannelRef.current = null
+      }
+    }
   }, [livraisonId, loadData])
+
+  // Lancer le subscribe GPS quand le coursier est assigné
+  useEffect(() => {
+    if (livraison?.coursier_id && livraison?.coursier?.nom) {
+      subscribeGps(livraison.coursier_id, livraison.coursier.nom)
+    }
+  }, [livraison?.coursier_id, livraison?.coursier?.nom, subscribeGps])
 
   const handleSendMessage = async () => {
     if (!livraison?.coursier_id || !newMessage.trim() || !currentUserId) return
@@ -111,7 +190,9 @@ export default function SuiviPage() {
       )
       setNewMessage('')
       await loadData()
-    } catch { toast.error("Erreur lors de l'envoi") }
+    } catch {
+      toast.error("Erreur lors de l'envoi")
+    }
   }
 
   if (loading) return (
@@ -121,40 +202,85 @@ export default function SuiviPage() {
   )
   if (!livraison) return null
 
-  const isCompleted = ['livree', 'annulee'].includes(livraison.statut)
+  const isCompleted   = ['livree', 'annulee'].includes(livraison.statut)
+  const stepIndex     = STATUT_STEPS.indexOf(livraison.statut)
+  const progressPct   = livraison.statut === 'en_attente' ? 0
+    : livraison.statut === 'livree' ? 100
+    : ((stepIndex + 1) / STATUT_STEPS.length) * 100
+  const isCoursierLive = coursierLat !== null && coursierLng !== null
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header avec bouton retour */}
       <header className="sticky top-0 z-40 bg-primary-600 text-white shadow-md">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <div className="flex items-center gap-3 h-16">
-            <button onClick={() => router.back()} className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center hover:bg-white/30">←</button>
-            <div>
+            <button
+              onClick={() => router.back()}
+              className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              ←
+            </button>
+            <div className="flex-1">
               <h1 className="font-bold">Suivi de livraison</h1>
               <p className="text-white/60 text-xs">#{livraisonId.slice(0, 8).toUpperCase()}</p>
             </div>
+            {/* Indicateur GPS live */}
+            {isCoursierLive && (
+              <div className="flex items-center gap-1.5 bg-green-500/20 rounded-lg px-2 py-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-xs font-semibold text-green-200">GPS live</span>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
+      {/* Barre de progression livraison */}
+      {livraison.statut !== 'annulee' && (
+        <div className="w-full h-1.5 bg-gray-200">
+          <div
+            className="h-full bg-primary-500 transition-all duration-700"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      )}
+
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-24 space-y-4">
+
         {/* Statut */}
         <div className={`rounded-2xl p-4 ${STATUT_COLORS[livraison.statut] || 'bg-gray-100 text-gray-700'}`}>
           <p className="font-bold text-lg">{STATUT_LABELS[livraison.statut] || livraison.statut}</p>
+          {livraison.statut === 'en_attente' && (
+            <p className="text-sm opacity-75 mt-1">Les coursiers sont notifiés et peuvent faire des propositions</p>
+          )}
         </div>
 
-        {/* Carte */}
+        {/* Indicateur position coursier live */}
+        {isCoursierLive && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+            <p className="text-green-700 text-sm font-semibold">
+              📍 {coursierNom || 'Coursier'} — position mise à jour en temps réel
+            </p>
+          </div>
+        )}
+
+        {/* Carte avec position coursier */}
         {livraison.depart_lat && (
           <div className="h-72 rounded-2xl overflow-hidden border border-gray-200">
             <MapAdvanced
               depart={{ lat: livraison.depart_lat, lng: livraison.depart_lng, label: livraison.depart_adresse }}
               arrivee={{ lat: livraison.arrivee_lat, lng: livraison.arrivee_lng, label: livraison.arrivee_adresse }}
               route={route ?? undefined}
+              coursier={isCoursierLive
+                ? { lat: coursierLat!, lng: coursierLng!, nom: coursierNom || 'Coursier' }
+                : undefined}
             />
           </div>
         )}
 
-        {/* Route */}
+        {/* Infos route */}
         {route && (
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -168,7 +294,7 @@ export default function SuiviPage() {
           </div>
         )}
 
-        {/* Coursier */}
+        {/* Infos coursier */}
         {livraison.coursier && (
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-3">Votre coursier</h3>
@@ -184,26 +310,54 @@ export default function SuiviPage() {
               </div>
               <div className="flex gap-2">
                 {livraison.coursier.telephone && (
-                  <a href={`tel:${livraison.coursier.telephone}`}
-                    className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg hover:bg-green-200">📞</a>
+                  <a
+                    href={`tel:${livraison.coursier.telephone}`}
+                    className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg hover:bg-green-200 transition-colors"
+                  >
+                    📞
+                  </a>
                 )}
-                <button onClick={() => setShowChat(!showChat)}
-                  className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg hover:bg-blue-200">💬</button>
+                {livraison.coursier.whatsapp && (
+                  <a
+                    href={communicationService.getWhatsAppLink ? communicationService.getWhatsAppLink(livraison.coursier.whatsapp) : `https://wa.me/${livraison.coursier.whatsapp}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg hover:bg-green-200 transition-colors"
+                  >
+                    💬
+                  </a>
+                )}
+                <button
+                  onClick={() => setShowChat(!showChat)}
+                  className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg hover:bg-blue-200 transition-colors"
+                >
+                  ✉️
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Chat */}
+        {/* Chat intégré */}
         {showChat && livraison.coursier && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border-2 border-primary-200">
-            <h3 className="font-bold text-gray-900 mb-3">Chat avec {livraison.coursier.nom}</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-900">Chat avec {livraison.coursier.nom}</h3>
+              <button onClick={() => setShowChat(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
             <div className="h-48 overflow-y-auto bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
               {messages.length === 0
-                ? <p className="text-sm text-gray-400 text-center py-8">Aucun message</p>
+                ? <p className="text-sm text-gray-400 text-center py-8">Aucun message — démarrez la conversation</p>
                 : messages.map(msg => (
-                    <div key={msg.id} className={`flex ${msg.expediteur_id === livraison.client_id ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-xs px-3 py-2 rounded-xl text-sm ${msg.expediteur_id === livraison.client_id ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.expediteur_id === livraison.client_id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-xs px-3 py-2 rounded-xl text-sm ${
+                        msg.expediteur_id === livraison.client_id
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-gray-200 text-gray-900'
+                      }`}>
                         {msg.contenu}
                       </div>
                     </div>
@@ -211,17 +365,25 @@ export default function SuiviPage() {
               }
             </div>
             <div className="flex gap-2">
-              <input type="text" placeholder="Message..." value={newMessage}
+              <input
+                type="text"
+                placeholder="Message..."
+                value={newMessage}
                 onChange={e => setNewMessage(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
-                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400" />
-              <button onClick={handleSendMessage}
-                className="px-4 py-2 rounded-xl bg-primary-500 text-white font-semibold hover:bg-primary-600">→</button>
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400"
+              />
+              <button
+                onClick={handleSendMessage}
+                className="px-4 py-2 rounded-xl bg-primary-500 text-white font-semibold hover:bg-primary-600 transition-colors"
+              >
+                →
+              </button>
             </div>
           </div>
         )}
 
-        {/* Détails */}
+        {/* Détails livraison */}
         <div className="space-y-3">
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Départ</p>
@@ -231,28 +393,54 @@ export default function SuiviPage() {
             <p className="text-xs text-gray-500 mb-1">Destination</p>
             <p className="font-semibold text-gray-900">{livraison.arrivee_adresse}</p>
           </div>
+          {livraison.pour_tiers && livraison.destinataire_nom && (
+            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+              <p className="text-xs text-blue-500 mb-1">Destinataire</p>
+              <p className="font-semibold text-blue-900">{livraison.destinataire_nom}</p>
+              <p className="text-xs text-blue-600">{livraison.destinataire_tel}</p>
+            </div>
+          )}
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Montant</p>
             <p className="text-2xl font-black text-primary-600">
               {(livraison.prix_final || livraison.prix_calcule).toLocaleString()} XOF
             </p>
+            {livraison.mode_paiement && (
+              <p className="text-xs text-gray-400 mt-1">
+                {livraison.mode_paiement === 'cash' ? '💵 Espèces' : '📱 Mobile Money'}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Actions fin */}
+        {/* Actions fin de livraison */}
         {isCompleted && (
           <div className="space-y-3">
             {livraison.statut === 'livree' && (
-              <Link href={`/client/evaluation/${livraisonId}`}
-                className="block w-full py-3 rounded-xl bg-primary-500 text-white font-bold text-center hover:bg-primary-600">
+              <Link
+                href={`/client/evaluation/${livraisonId}`}
+                className="block w-full py-3 rounded-xl bg-primary-500 text-white font-bold text-center hover:bg-primary-600 transition-colors"
+              >
                 ⭐ Évaluer cette livraison
               </Link>
             )}
-            <Link href="/client/dashboard"
-              className="block w-full py-3 rounded-xl border-2 border-gray-200 text-gray-700 font-bold text-center hover:bg-gray-50">
+            <Link
+              href="/client/dashboard"
+              className="block w-full py-3 rounded-xl border-2 border-gray-200 text-gray-700 font-bold text-center hover:bg-gray-50 transition-colors"
+            >
               ← Retour au dashboard
             </Link>
           </div>
+        )}
+
+        {/* Lien propositions si en attente */}
+        {livraison.statut === 'en_attente' && (
+          <Link
+            href={`/client/propositions/${livraisonId}`}
+            className="block w-full py-3 rounded-xl bg-orange-500 text-white font-bold text-center hover:bg-orange-600 transition-colors"
+          >
+            💬 Voir les propositions des coursiers
+          </Link>
         )}
       </main>
     </div>
