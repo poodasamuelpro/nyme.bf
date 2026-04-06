@@ -46,11 +46,14 @@ export type Coursier = {
   lng_actuelle:                number | null
   derniere_activite:           string | null
   created_at:                  string
+  // Colonnes réelles confirmées par la structure SQL
   status_validation_documents: 'pending' | 'approved' | 'rejected'
   commission_due:              number
 }
 
 // ── 3. TABLE : livraisons ────────────────────────────────────────────
+// IMPORTANT : 'en_rout_depart' SANS 'e' — c'est la valeur exacte
+// de la CHECK constraint SQL réelle. Ne pas modifier.
 export type Livraison = {
   id:                    string
   client_id:             string
@@ -76,11 +79,13 @@ export type Livraison = {
   distance_km:           number | null
   duree_estimee:         number | null
   statut_paiement:       'en_attente' | 'paye' | 'rembourse'
+  // mode_paiement : 'cash'|'mobile_money'|'carte' selon CHECK SQL réel (pas 'wallet')
   mode_paiement:         'cash' | 'mobile_money' | 'carte' | null
   programme_le:          string | null
   created_at:            string
   acceptee_at:           string | null
-  recupero_at:           string | null
+  // CORRECTION : recupere_at (SQL réel) — était recupero_at (typo)
+  recupere_at:           string | null
   livree_at:             string | null
   annulee_at:            string | null
   annulee_par:           'client' | 'coursier' | 'admin' | null
@@ -95,6 +100,7 @@ export type Livraison = {
     telephone:    string | null
     avatar_url:   string | null
     note_moyenne: number
+    whatsapp:     string | null
   }
 }
 
@@ -242,6 +248,7 @@ export type Signalement = {
 }
 
 // ── 14. TABLE : statuts_livraison ────────────────────────────────────
+// Colonne SQL réelle : changed_at (pas created_at)
 export type StatutLivraison = {
   id:           string
   livraison_id: string
@@ -334,14 +341,14 @@ export type AdresseFavorite = {
 
 // ── 22. TABLE : config_tarifs ────────────────────────────────────────
 export type ConfigTarif = {
-  id:                   string
-  tarif_km:             number
-  tarif_minute:         number
-  frais_fixe:           number
-  commission_pct:       number
+  id:                    string
+  tarif_km:              number
+  tarif_minute:          number
+  frais_fixe:            number
+  commission_pct:        number
   multiplicateur_urgent: number
-  actif:                boolean
-  updated_at:           string
+  actif:                 boolean
+  updated_at:            string
 }
 
 // ── HELPERS ──────────────────────────────────────────────────────────
@@ -389,7 +396,7 @@ export async function getWallet(userId: string): Promise<Wallet | null> {
 export async function getLivraison(livraisonId: string): Promise<Livraison | null> {
   const { data, error } = await supabase
     .from('livraisons')
-    .select('*, coursier:coursiers(id, nom, telephone, avatar_url, note_moyenne)')
+    .select('*, coursier:coursiers(id, nom, telephone, whatsapp, avatar_url, note_moyenne)')
     .eq('id', livraisonId)
     .single()
   if (error) return null
