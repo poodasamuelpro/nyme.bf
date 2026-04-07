@@ -1,0 +1,225 @@
+-- ══════════════════════════════════════════════════════════════════
+-- NYME BF — Migration 007 : Barèmes de tarification par tranches
+-- Exécuter dans Supabase SQL Editor AVANT tout déploiement de code
+-- ══════════════════════════════════════════════════════════════════
+
+-- ─────────────────────────────────────────────────────────────────
+-- 1. CRÉER LA TABLE tarifs_baremes (remplace le tarif_km unique)
+-- ─────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.tarifs_baremes (
+  id              UUID    PRIMARY KEY DEFAULT uuid_generate_v4(),
+  -- Tranche kilométrique
+  km_min          NUMERIC(6,2) NOT NULL,  -- borne inférieure (incluse)
+  km_max          NUMERIC(6,2) NOT NULL,  -- borne supérieure (exclue, sauf dernière)
+  prix_par_km     NUMERIC(8,2) NOT NULL,  -- XOF par km dans cette tranche
+  label           TEXT    NOT NULL,       -- ex: "0 à 3.5 km"
+  -- Ordre d'application
+  ordre           INTEGER NOT NULL,
+  -- Activation
+  actif           BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Audit
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT tarifs_baremes_km_check CHECK (km_min >= 0 AND km_max > km_min),
+  CONSTRAINT tarifs_baremes_prix_check CHECK (prix_par_km > 0)
+);
+
+-- Index pour lecture ordonnée rapide
+CREATE INDEX IF NOT EXISTS idx_tarifs_baremes_ordre
+  ON public.tarifs_baremes (ordre)
+  WHERE actif = TRUE;
+
+-- Trigger updated_at
+CREATE OR REPLACE FUNCTION public.update_tarifs_baremes_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_tarifs_baremes_updated_at ON public.tarifs_baremes;
+CREATE TRIGGER trg_tarifs_baremes_updated_at
+  BEFORE UPDATE ON public.tarifs_baremes
+  FOR EACH ROW EXECUTE FUNCTION public.update_tarifs_baremes_updated_at();
+
+-- ─────────────────────────────────────────────────────────────────
+-- 2. DONNÉES INITIALES — 6 tranches
+-- NOTE : Les prix sont des placeholders.
+-- L'admin peut les modifier depuis le dashboard sans redéploiement.
+-- ─────────────────────────────────────────────────────────────────
+
+INSERT INTO public.tarifs_baremes (km_min, km_max, prix_par_km, label, ordre)
+VALUES
+  (0.0,   3.5,  600,  '0 à 3,5 km',   1),
+  (3.5,   6.0,  580,  '3,5 à 6 km',   2),
+  (6.0,   9.0,  550,  '6 à 9 km',     3),
+  (9.0,  12.0,  520,  '9 à 12 km',    4),
+  (12.0, 16.0,  490,  '12 à 16 km',   5),
+  (16.0, 20.0,  460,  '16 à 20 km',   6)
+ON CONFLICT DO NOTHING;
+
+-- ─────────────────────────────────────────────────────────────────
+-- 3. MODIFIER config_tarifs — ajouter les nouveaux paramètres
+-- ─────────────────────────────────────────────────────────────────
+
+-- Ajouter les colonnes manquantes à config_tarifs
+ALTER TABLE public.config_tarifs
+  ADD COLUMN IF NOT EXISTS frais_fixe_immediate    NUMERIC(8,2) NOT NULL DEFAULT 800.0,
+  ADD COLUMN IF NOT EXISTS frais_fixe_urgente      NUMERIC(8,2) NOT NULL DEFAULT 800.0,
+  ADD COLUMN IF NOT EXISTS frais_fixe_programmee   NUMERIC(8,2) NOT NULL DEFAULT 800.0,
+  ADD COLUMN IF NOT EXISTS prix_minimum            NUMERIC(8,2) NOT NULL DEFAULT 800.0,
+  ADD COLUMN IF NOT EXISTS multiplicateur_urgente  NUMERIC(4,2) NOT NULL DEFAULT 1.25,
+  ADD COLUMN IF NOT EXISTS multiplicateur_programmee NUMERIC(4,2) NOT NULL DEFAULT 0.90,
+  ADD COLUMN IF NOT EXISTS multiplicateur_pluie    NUMERIC(4,2) NOT NULL DEFAULT 1.15,
+  ADD COLUMN IF NOT EXISTS pluie_actif             BOOLEAN NOT NULL DEFAULT FALSE,
+  -- Commissions fixes NYME (XOF, indépendantes du prix)
+  ADD COLUMN IF NOT EXISTS commission_immediate    NUMERIC(8,2) NOT NULL DEFAULT 200.0,
+  ADD COLUMN IF NOT EXISTS commission_urgente      NUMERIC(8,2) NOT NULL DEFAULT 250.0,
+  ADD COLUMN IF NOT EXISTS commission_programmee   NUMERIC(8,2) NOT NULL DEFAULT 250.0;
+
+-- Insérer la config de base si la table est vide
+INSERT INTO public.config_tarifs (
+  tarif_km, tarif_minute, frais_fixe,
+  frais_fixe_immediate, frais_fixe_urgente, frais_fixe_programmee,
+  prix_minimum,
+  multiplicateur_urgent, multiplicateur_urgente, multiplicateur_programmee,
+  multiplicateur_pluie, pluie_actif,
+  commission_immediate, commission_urgente, commission_programmee,
+  commission_pct, actif
+) VALUES (
+  600, 0, 800,
+  800, 800, 800,
+  800,
+  1.25, 1.25, 0.90,
+  1.15, FALSE,
+  200, 250, 250,
+  15.0, TRUE
+)
+ON CONFLICT DO NOTHING;
+
+-- ─────────────────────────────────────────────────────────────────
+-- 4. FONCTION SQL : calculer_prix_livraison
+-- Utilisée côté serveur (route.ts) pour calcul officiel
+-- ─────────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.calculer_prix_livraison(
+  p_distance_km NUMERIC,
+  p_type        TEXT DEFAULT 'immediate',
+  p_pluie       BOOLEAN DEFAULT FALSE
+) RETURNS NUMERIC
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+DECLARE
+  v_config       config_tarifs%ROWTYPE;
+  v_prix         NUMERIC := 0;
+  v_frais_fixe   NUMERIC;
+  v_baremes      RECORD;
+  v_km_restant   NUMERIC;
+  v_km_tranche   NUMERIC;
+BEGIN
+  -- Charger la config active
+  SELECT * INTO v_config FROM config_tarifs WHERE actif = TRUE ORDER BY updated_at DESC LIMIT 1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Aucune configuration tarifaire active';
+  END IF;
+
+  -- Choisir les frais fixes selon le type
+  IF p_type = 'urgente' THEN
+    v_frais_fixe := v_config.frais_fixe_urgente;
+  ELSIF p_type = 'programmee' THEN
+    v_frais_fixe := v_config.frais_fixe_programmee;
+  ELSE
+    v_frais_fixe := v_config.frais_fixe_immediate;
+  END IF;
+
+  v_prix := v_frais_fixe;
+  v_km_restant := p_distance_km;
+
+  -- Appliquer les barèmes par tranche dans l'ordre
+  FOR v_baremes IN
+    SELECT km_min, km_max, prix_par_km
+    FROM tarifs_baremes
+    WHERE actif = TRUE
+    ORDER BY ordre ASC
+  LOOP
+    EXIT WHEN v_km_restant <= 0;
+
+    v_km_tranche := LEAST(v_km_restant, v_baremes.km_max - v_baremes.km_min);
+    v_prix := v_prix + (v_km_tranche * v_baremes.prix_par_km);
+    v_km_restant := v_km_restant - v_km_tranche;
+  END LOOP;
+
+  -- Si distance dépasse le dernier barème, utiliser le tarif du dernier
+  IF v_km_restant > 0 THEN
+    SELECT prix_par_km INTO v_km_tranche
+    FROM tarifs_baremes WHERE actif = TRUE ORDER BY ordre DESC LIMIT 1;
+    v_prix := v_prix + (v_km_restant * COALESCE(v_km_tranche, 400));
+  END IF;
+
+  -- Modificateurs de type
+  IF p_type = 'urgente' THEN
+    v_prix := v_prix * v_config.multiplicateur_urgente;
+  ELSIF p_type = 'programmee' THEN
+    v_prix := v_prix * v_config.multiplicateur_programmee;
+  END IF;
+
+  -- Modificateur météo
+  IF p_pluie AND v_config.pluie_actif THEN
+    v_prix := v_prix * v_config.multiplicateur_pluie;
+  END IF;
+
+  -- Appliquer le minimum
+  v_prix := GREATEST(v_prix, v_config.prix_minimum);
+
+  RETURN ROUND(v_prix);
+END;
+$$;
+
+-- ─────────────────────────────────────────────────────────────────
+-- 5. RLS sur tarifs_baremes
+-- Lecture publique (app), écriture admin uniquement
+-- ─────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.tarifs_baremes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Lecture publique tarifs" ON public.tarifs_baremes;
+CREATE POLICY "Lecture publique tarifs" ON public.tarifs_baremes
+  FOR SELECT USING (TRUE);
+
+DROP POLICY IF EXISTS "Admin modifie tarifs" ON public.tarifs_baremes;
+CREATE POLICY "Admin modifie tarifs" ON public.tarifs_baremes
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM utilisateurs
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- RLS sur config_tarifs (même logique)
+ALTER TABLE public.config_tarifs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Lecture publique config_tarifs" ON public.config_tarifs;
+CREATE POLICY "Lecture publique config_tarifs" ON public.config_tarifs
+  FOR SELECT USING (TRUE);
+
+DROP POLICY IF EXISTS "Admin modifie config_tarifs" ON public.config_tarifs;
+CREATE POLICY "Admin modifie config_tarifs" ON public.config_tarifs
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM utilisateurs
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- ─────────────────────────────────────────────────────────────────
+-- 6. VÉRIFICATION FINALE
+-- ─────────────────────────────────────────────────────────────────
+
+-- Test de la fonction
+DO $$
+BEGIN
+  RAISE NOTICE 'Test 2km immédiate: % XOF', public.calculer_prix_livraison(2, 'immediate', false);
+  RAISE NOTICE 'Test 5km immédiate: % XOF', public.calculer_prix_livraison(5, 'immediate', false);
+  RAISE NOTICE 'Test 5km urgente:   % XOF', public.calculer_prix_livraison(5, 'urgente',   false);
+  RAISE NOTICE 'Test 10km immédiate: % XOF', public.calculer_prix_livraison(10, 'immediate', false);
+  RAISE NOTICE 'Test 15km programmee: % XOF', public.calculer_prix_livraison(15, 'programmee', false);
+END $$;
