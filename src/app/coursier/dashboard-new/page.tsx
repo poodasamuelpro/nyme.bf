@@ -7,6 +7,7 @@
 // ✅ Responsive mobile = app pure (pas de header/footer site)
 // ✅ GPS envoi position vers Supabase toutes les 5s quand disponible
 // ✅ Contre-proposition de prix depuis l'UI
+// ✅ Bouton retour sur chaque onglet secondaire
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -18,7 +19,7 @@ import {
   Bell, ChevronRight, MapPin, RefreshCw, Phone,
   TrendingUp, CheckCircle, Star, AlertTriangle, ArrowDown,
   ArrowUpRight, ChevronDown, X, Camera, Shield, Save, Eye, EyeOff,
-  Upload, FileText,
+  Upload, FileText, ArrowLeft,
 } from 'lucide-react'
 
 type Tab = 'missions' | 'en_cours' | 'gains' | 'profil'
@@ -61,6 +62,28 @@ const TYPE_BADGE: Record<string, { label: string; emoji: string; color: string; 
 
 const fPrice = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
 const fDate  = (d: string) => new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(d))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUTON RETOUR COURSIER
+// ─────────────────────────────────────────────────────────────────────────────
+function BackButton({ onBack, label = 'Missions' }: { onBack: () => void; label?: string }) {
+  return (
+    <button
+      onClick={onBack}
+      className="flex items-center gap-2 self-start mb-1 group"
+    >
+      <span
+        className="flex items-center justify-center w-8 h-8 rounded-xl transition-all group-hover:scale-105 active:scale-95"
+        style={{ background: 'rgba(249,115,22,0.15)', color: '#f97316' }}
+      >
+        <ArrowLeft size={15} />
+      </span>
+      <span className="text-sm font-bold" style={{ color: '#f97316' }}>
+        {label}
+      </span>
+    </button>
+  )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPOSANT CARTE UNIVERSELLE COURSIER
@@ -421,7 +444,7 @@ function ParametresCoursier({
           {section === 'documents' && (
             <div className="space-y-3">
               <div className="bg-amber-50 rounded-2xl p-4">
-                <p className="text-amber-800 text-xs font-semibold">Documents vérifiés par l'équipe NYME sous 24-48h.</p>
+                <p className="text-amber-800 text-xs font-semibold">Documents vérifiés par l&apos;équipe NYME sous 24-48h.</p>
               </div>
               {docs.map((d, i) => (
                 <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -513,9 +536,9 @@ export default function CoursierDashboard() {
   const userIdRef      = useRef<string | null>(null)
 
   // Contre-proposition
-  const [propositionInputs, setPropositionInputs] = useState<Record<string, string>>({})
-  const [proposantId,       setProposantId]       = useState<string | null>(null)
-  const [propositionLoading, setPropositionLoading] = useState<string | null>(null)
+  const [propositionInputs,   setPropositionInputs]   = useState<Record<string, string>>({})
+  const [proposantId,         setProposantId]         = useState<string | null>(null)
+  const [propositionLoading,  setPropositionLoading]  = useState<string | null>(null)
 
   // ── Envoi GPS vers Supabase ─────────────────────────────────────────────
   const sendGpsToSupabase = useCallback(async (
@@ -527,21 +550,20 @@ export default function CoursierDashboard() {
         livraison_id: null,
         latitude: lat,
         longitude: lng,
-        vitesse: speed ? Math.round(speed * 3.6 * 100) / 100 : 0, // m/s → km/h
+        vitesse: speed ? Math.round(speed * 3.6 * 100) / 100 : 0,
       })
       await supabase.from('coursiers').update({
         lat_actuelle: lat,
         lng_actuelle: lng,
         derniere_activite: new Date().toISOString(),
       }).eq('id', uid)
-    } catch { /* silencieux — l'app ne doit pas crasher si GPS échoue */ }
+    } catch { /* silencieux */ }
   }, [])
 
   // ── Démarrer le tracking GPS ──────────────────────────────────────────
   const startGpsTracking = useCallback((uid: string) => {
     if (!navigator.geolocation) return
 
-    // Position initiale immédiate
     navigator.geolocation.getCurrentPosition(
       pos => {
         setUserLat(pos.coords.latitude)
@@ -551,7 +573,6 @@ export default function CoursierDashboard() {
       () => {}
     )
 
-    // Watch continu
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current)
     }
@@ -566,7 +587,6 @@ export default function CoursierDashboard() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
     )
 
-    // Envoi forcé toutes les 5s (même sans mouvement)
     if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current)
     gpsIntervalRef.current = setInterval(() => {
       navigator.geolocation.getCurrentPosition(
@@ -630,7 +650,6 @@ export default function CoursierDashboard() {
           setCoursier(c as Coursier)
           const isDisponible = c.statut === 'disponible'
           setDisponible(isDisponible)
-          // Démarrer GPS si déjà disponible
           if (isDisponible) startGpsTracking(session.user.id)
         }
 
@@ -644,7 +663,6 @@ export default function CoursierDashboard() {
           loadWallet(session.user.id),
         ])
 
-        // Position initiale (sans tracking)
         navigator.geolocation?.getCurrentPosition(
           pos => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude) },
           () => {}
@@ -672,7 +690,6 @@ export default function CoursierDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Cleanup GPS au démontage
   useEffect(() => {
     return () => { stopGpsTracking() }
   }, [stopGpsTracking])
@@ -691,7 +708,6 @@ export default function CoursierDashboard() {
             }).eq('id', user.id)
             setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude)
             setDisponible(true)
-            // Démarrer le tracking GPS
             startGpsTracking(user.id)
             toast.success('✅ En ligne — GPS actif')
             setToggling(false)
@@ -729,7 +745,6 @@ export default function CoursierDashboard() {
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Erreur') }
   }
 
-  // Contre-proposition de prix
   const handleProposerPrix = async (livraisonId: string) => {
     if (!user) return
     const montantStr = propositionInputs[livraisonId]
@@ -815,7 +830,6 @@ export default function CoursierDashboard() {
             </div>
 
             <div className="flex items-center gap-1.5">
-              {/* Toggle disponibilité */}
               <button onClick={toggleDisponible} disabled={toggling || !isVerifie}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold text-xs transition-all
                   ${disponible ? 'bg-green-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/15'}
@@ -827,13 +841,11 @@ export default function CoursierDashboard() {
                 <span className="hidden sm:inline">{disponible ? 'En ligne' : 'Hors ligne'}</span>
               </button>
 
-              {/* Notifs */}
               <button className="relative w-9 h-9 rounded-xl hover:bg-white/10 flex items-center justify-center transition-colors">
                 <Bell size={17} className="text-white/70" />
                 {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadCount}</span>}
               </button>
 
-              {/* Photo profil */}
               <button onClick={() => setShowParams(true)} className="shrink-0">
                 {user?.avatar_url
                   ? <img src={user.avatar_url} alt={user.nom} className="w-8 h-8 rounded-full object-cover border-2 border-white/20" />
@@ -906,10 +918,10 @@ export default function CoursierDashboard() {
                 <div className="absolute bottom-3 left-3 right-3 z-10">
                   <div className="rounded-2xl px-4 py-3 grid grid-cols-4 gap-2" style={{ background: 'rgba(15,23,42,0.9)', backdropFilter: 'blur(8px)' }}>
                     {[
-                      { label: 'Dispo',     val: String(coursesDisponibles.length),    color: '#22c55e' },
-                      { label: 'En cours',  val: String(coursesEnCours.length),        color: '#f97316' },
-                      { label: 'Total',     val: String(coursier?.total_courses || 0), color: '#8b5cf6' },
-                      { label: "Auj.",      val: gainsDuJour > 0 ? `${Math.round(gainsDuJour / 1000)}k` : '0', color: '#eab308' },
+                      { label: 'Dispo',    val: String(coursesDisponibles.length),    color: '#22c55e' },
+                      { label: 'En cours', val: String(coursesEnCours.length),        color: '#f97316' },
+                      { label: 'Total',    val: String(coursier?.total_courses || 0), color: '#8b5cf6' },
+                      { label: 'Auj.',     val: gainsDuJour > 0 ? `${Math.round(gainsDuJour / 1000)}k` : '0', color: '#eab308' },
                     ].map(s => (
                       <div key={s.label} className="text-center">
                         <p className="text-sm font-black" style={{ color: s.color }}>{s.val}</p>
@@ -988,7 +1000,6 @@ export default function CoursierDashboard() {
                               </div>
                             )}
 
-                            {/* Formulaire contre-proposition */}
                             {isProposing && (
                               <div className="mb-2 flex gap-2">
                                 <div className="relative flex-1">
@@ -1028,7 +1039,6 @@ export default function CoursierDashboard() {
                             >
                               ✅ Accepter
                             </button>
-                            {/* Bouton contre-proposition */}
                             {disponible && isVerifie && (
                               <button
                                 onClick={() => setProposantId(isProposing ? null : l.id)}
@@ -1067,6 +1077,7 @@ export default function CoursierDashboard() {
           {/* ══ EN COURS ══ */}
           {tab === 'en_cours' && (
             <div className="px-4 sm:px-0 pt-4 space-y-4">
+              <BackButton onBack={() => setTab('missions')} label="Missions" />
               <h2 className="text-xl font-black text-gray-900">Missions en cours</h2>
 
               {coursesEnCours.length === 0 ? (
@@ -1138,6 +1149,7 @@ export default function CoursierDashboard() {
           {/* ══ GAINS ══ */}
           {tab === 'gains' && (
             <div className="px-4 sm:px-0 pt-4 space-y-4">
+              <BackButton onBack={() => setTab('missions')} label="Missions" />
               <h2 className="text-xl font-black text-gray-900">Mes gains</h2>
 
               <div className="rounded-3xl p-6 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)' }}>
@@ -1197,6 +1209,8 @@ export default function CoursierDashboard() {
           {/* ══ PROFIL ══ */}
           {tab === 'profil' && (
             <div className="px-4 sm:px-0 pt-4 space-y-4">
+              <BackButton onBack={() => setTab('missions')} label="Missions" />
+
               <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center" style={{ boxShadow: '0 1px 12px rgba(0,0,0,0.06)' }}>
                 <div className="relative inline-block mb-3">
                   {user?.avatar_url
@@ -1246,7 +1260,6 @@ export default function CoursierDashboard() {
                 })}
               </div>
 
-              {/* Notifications */}
               {notifications.length > 0 && (
                 <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
