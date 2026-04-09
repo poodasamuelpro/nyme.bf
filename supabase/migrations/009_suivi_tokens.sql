@@ -1,6 +1,6 @@
 -- ══════════════════════════════════════════════════════════════════
 -- NYME BF — Migration 009 : Tokens de suivi tiers
--- Exécuter dans Supabase SQL Editor APRÈS migration 008
+-- Exécuter dans Supabase SQL Editor APRÈS migration 008 
 -- ══════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────
