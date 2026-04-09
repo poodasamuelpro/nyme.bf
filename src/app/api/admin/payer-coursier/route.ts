@@ -56,21 +56,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Erreur paiement : ${rpcErr.message}` }, { status: 500 })
     }
 
-    // 5. Mettre à jour total_gains dans la table coursiers
-    await Promise.resolve(supabaseAdmin.rpc('process_wallet_transaction', {
-      p_user_id:   coursier_id,
-      p_type:      'gain',
-      p_montant:   0,       // pas de crédit supplémentaire — juste pour forcer la mise à jour
-      p_reference: `NOP_${Date.now()}`,
-    })).then(() => {}).catch(() => {})
-
-    // Mise à jour directe de total_gains coursiers
+    // 5. Mettre à jour total_gains dans la table coursiers (via le solde actuel du wallet)
     const { data: wallet } = await supabaseAdmin
-      .from('wallets').select('solde').eq('user_id', coursier_id).single()
+      .from('wallets').select('solde, total_gains').eq('user_id', coursier_id).single()
     if (wallet) {
       await supabaseAdmin
         .from('coursiers')
-        .update({ total_gains: Number(wallet.solde) })
+        .update({ total_gains: Number(wallet.total_gains) })
         .eq('id', coursier_id)
     }
 
