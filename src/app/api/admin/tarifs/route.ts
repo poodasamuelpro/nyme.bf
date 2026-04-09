@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { km_min, km_max, prix_par_km, label, ordre } = body
 
-    if (!km_min === undefined || !km_max || !prix_par_km || !label || !ordre) {
+    if (km_min === undefined || km_max === undefined || !prix_par_km || !label || !ordre) {
       return NextResponse.json({ error: 'km_min, km_max, prix_par_km, label, ordre requis' }, { status: 400 })
     }
 
