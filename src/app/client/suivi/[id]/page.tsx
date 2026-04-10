@@ -1,4 +1,9 @@
 // src/app/client/suivi/[id]/page.tsx
+// ═══════════════════════════════════════════════════════════════════════════
+// MODIFICATION : Ajout du bouton d'appel WebRTC (CallButton) pour contacter
+// le coursier directement depuis le suivi de livraison.
+// Bouton 📞 natif + bouton 💬 WhatsApp + bouton 🔊 Appel WebRTC NYME
+// ═══════════════════════════════════════════════════════════════════════════
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -11,6 +16,7 @@ import type { MessageWithAuthor } from '@/services/communication-service'
 import type { RouteResult } from '@/services/map-service'
 import type { Livraison, Utilisateur } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import CallButton from '@/components/calls/CallButton'
 
 const MapAdvanced = dynamic(() => import('@/components/MapAdvanced'), { ssr: false })
 
@@ -39,28 +45,25 @@ const STATUT_LABELS: Record<string, string> = {
   annulee:          '❌ Annulée',
 }
 
-// Étapes de progression visuelles
 const STATUT_STEPS = ['acceptee', 'en_rout_depart', 'colis_recupere', 'en_route_arrivee', 'livree']
 
 export default function SuiviPage() {
-  const params = useParams()
-  const router = useRouter()
+  const params      = useParams()
+  const router      = useRouter()
   const livraisonId = params.id as string
 
-  const [livraison, setLivraison]     = useState<LivraisonWithDetails | null>(null)
-  const [loading, setLoading]         = useState(true)
-  const [route, setRoute]             = useState<RouteResult | null>(null)
-  const [showChat, setShowChat]       = useState(false)
-  const [messages, setMessages]       = useState<MessageWithAuthor[]>([])
-  const [newMessage, setNewMessage]   = useState('')
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [livraison,       setLivraison]       = useState<LivraisonWithDetails | null>(null)
+  const [loading,         setLoading]         = useState(true)
+  const [route,           setRoute]           = useState<RouteResult | null>(null)
+  const [showChat,        setShowChat]        = useState(false)
+  const [messages,        setMessages]        = useState<MessageWithAuthor[]>([])
+  const [newMessage,      setNewMessage]      = useState('')
+  const [currentUserId,   setCurrentUserId]   = useState<string | null>(null)
 
-  // Position GPS du coursier en temps réel
   const [coursierLat, setCoursierLat] = useState<number | null>(null)
   const [coursierLng, setCoursierLng] = useState<number | null>(null)
   const [coursierNom, setCoursierNom] = useState<string>('')
 
-  // Ref pour stocker le canal GPS (cleanup)
   const gpsChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
   const loadData = useCallback(async () => {
@@ -80,7 +83,6 @@ export default function SuiviPage() {
     }
     setLivraison(data as LivraisonWithDetails)
 
-    // Calcul itinéraire
     if (data.depart_lat && data.arrivee_lat) {
       try {
         const r = await mapService.getRoute(
@@ -91,7 +93,6 @@ export default function SuiviPage() {
       } catch {}
     }
 
-    // Messages si coursier assigné
     if (data.coursier_id) {
       const msgs = await communicationService.getConversation(
         session.user.id, data.coursier_id, livraisonId
@@ -103,15 +104,12 @@ export default function SuiviPage() {
     setLoading(false)
   }, [livraisonId, router])
 
-  // Subscribe GPS coursier en temps réel
   const subscribeGps = useCallback(async (coursierId: string, nom: string) => {
-    // Nettoyage du canal précédent
     if (gpsChannelRef.current) {
       await supabase.removeChannel(gpsChannelRef.current)
       gpsChannelRef.current = null
     }
 
-    // Récupérer la dernière position connue immédiatement
     const { data: lastPos } = await supabase
       .from('localisation_coursier')
       .select('latitude, longitude')
@@ -126,23 +124,18 @@ export default function SuiviPage() {
       setCoursierNom(nom)
     }
 
-    // Subscribe aux nouvelles insertions GPS en temps réel
     const channel = supabase
       .channel(`gps-${coursierId}-${livraisonId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'localisation_coursier',
-          filter: `coursier_id=eq.${coursierId}`,
-        },
-        (payload) => {
-          const pos = payload.new as { latitude: number; longitude: number }
-          setCoursierLat(pos.latitude)
-          setCoursierLng(pos.longitude)
-        }
-      )
+      .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'localisation_coursier',
+        filter: `coursier_id=eq.${coursierId}`,
+      }, (payload) => {
+        const pos = payload.new as { latitude: number; longitude: number }
+        setCoursierLat(pos.latitude)
+        setCoursierLng(pos.longitude)
+      })
       .subscribe()
 
     gpsChannelRef.current = channel
@@ -150,20 +143,14 @@ export default function SuiviPage() {
 
   useEffect(() => {
     loadData()
-
-    // Subscribe aux updates de la livraison
     const livraisonChannel = supabase
       .channel(`suivi-${livraisonId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'livraisons',
-          filter: `id=eq.${livraisonId}`,
-        },
-        () => loadData()
-      )
+      .on('postgres_changes', {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'livraisons',
+        filter: `id=eq.${livraisonId}`,
+      }, () => loadData())
       .subscribe()
 
     return () => {
@@ -175,7 +162,6 @@ export default function SuiviPage() {
     }
   }, [livraisonId, loadData])
 
-  // Lancer le subscribe GPS quand le coursier est assigné
   useEffect(() => {
     if (livraison?.coursier_id && livraison?.coursier?.nom) {
       subscribeGps(livraison.coursier_id, livraison.coursier.nom)
@@ -202,16 +188,17 @@ export default function SuiviPage() {
   )
   if (!livraison) return null
 
-  const isCompleted   = ['livree', 'annulee'].includes(livraison.statut)
-  const stepIndex     = STATUT_STEPS.indexOf(livraison.statut)
-  const progressPct   = livraison.statut === 'en_attente' ? 0
+  const isCompleted    = ['livree', 'annulee'].includes(livraison.statut)
+  const stepIndex      = STATUT_STEPS.indexOf(livraison.statut)
+  const progressPct    = livraison.statut === 'en_attente' ? 0
     : livraison.statut === 'livree' ? 100
     : ((stepIndex + 1) / STATUT_STEPS.length) * 100
   const isCoursierLive = coursierLat !== null && coursierLng !== null
+  const hasCoursier    = !!livraison.coursier_id && !!livraison.coursier
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header avec bouton retour */}
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-primary-600 text-white shadow-md">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <div className="flex items-center gap-3 h-16">
@@ -225,7 +212,6 @@ export default function SuiviPage() {
               <h1 className="font-bold">Suivi de livraison</h1>
               <p className="text-white/60 text-xs">#{livraisonId.slice(0, 8).toUpperCase()}</p>
             </div>
-            {/* Indicateur GPS live */}
             {isCoursierLive && (
               <div className="flex items-center gap-1.5 bg-green-500/20 rounded-lg px-2 py-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -236,7 +222,7 @@ export default function SuiviPage() {
         </div>
       </header>
 
-      {/* Barre de progression livraison */}
+      {/* Barre de progression */}
       {livraison.statut !== 'annulee' && (
         <div className="w-full h-1.5 bg-gray-200">
           <div
@@ -256,7 +242,7 @@ export default function SuiviPage() {
           )}
         </div>
 
-        {/* Indicateur position coursier live */}
+        {/* Indicateur GPS live */}
         {isCoursierLive && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
@@ -266,7 +252,7 @@ export default function SuiviPage() {
           </div>
         )}
 
-        {/* Carte avec position coursier */}
+        {/* Carte */}
         {livraison.depart_lat && (
           <div className="h-72 rounded-2xl overflow-hidden border border-gray-200">
             <MapAdvanced
@@ -294,8 +280,8 @@ export default function SuiviPage() {
           </div>
         )}
 
-        {/* Infos coursier */}
-        {livraison.coursier && (
+        {/* Infos coursier + boutons de contact */}
+        {hasCoursier && livraison.coursier && (
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-3">Votre coursier</h3>
             <div className="flex items-center justify-between">
@@ -308,32 +294,65 @@ export default function SuiviPage() {
                   <p className="text-xs text-gray-500">⭐ {livraison.coursier.note_moyenne || 'Nouveau'}/5</p>
                 </div>
               </div>
-              <div className="flex gap-2">
+
+              {/* Boutons de contact */}
+              <div className="flex gap-2 items-center">
+                {/* Appel téléphonique natif */}
                 {livraison.coursier.telephone && (
                   <a
                     href={`tel:${livraison.coursier.telephone}`}
                     className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg hover:bg-green-200 transition-colors"
+                    title="Appel téléphonique natif"
                   >
                     📞
                   </a>
                 )}
+
+                {/* WhatsApp */}
                 {livraison.coursier.whatsapp && (
                   <a
-                    href={communicationService.getWhatsAppLink ? communicationService.getWhatsAppLink(livraison.coursier.whatsapp) : `https://wa.me/${livraison.coursier.whatsapp}`}
+                    href={communicationService.getWhatsAppLink
+                      ? communicationService.getWhatsAppLink(livraison.coursier.whatsapp)
+                      : `https://wa.me/${livraison.coursier.whatsapp}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg hover:bg-green-200 transition-colors"
+                    title="WhatsApp"
                   >
                     💬
                   </a>
                 )}
+
+                {/* Appel WebRTC NYME — Nouveau bouton */}
+                {currentUserId && livraison.coursier_id && (
+                  <CallButton
+                    appelantId={currentUserId}
+                    appelantRole="client"
+                    destinataireId={livraison.coursier_id}
+                    livraisonId={livraisonId}
+                    variant="icon"
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700"
+                    title="Appel audio NYME (gratuit)"
+                  />
+                )}
+
+                {/* Chat */}
                 <button
                   onClick={() => setShowChat(!showChat)}
                   className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg hover:bg-blue-200 transition-colors"
+                  title="Chat"
                 >
                   ✉️
                 </button>
               </div>
+            </div>
+
+            {/* Légende boutons */}
+            <div className="flex gap-3 mt-3 flex-wrap">
+              <span className="text-[10px] text-gray-400">📞 Natif</span>
+              <span className="text-[10px] text-gray-400">💬 WhatsApp</span>
+              <span className="text-[10px] text-blue-400 font-semibold">🎙️ Appel NYME (gratuit)</span>
+              <span className="text-[10px] text-gray-400">✉️ Chat</span>
             </div>
           </div>
         )}
