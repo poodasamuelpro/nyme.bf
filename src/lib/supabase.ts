@@ -378,6 +378,42 @@ export type ApiQuotaTracking = {
   updated_at:  string
 }
 
+// ── 25. TABLE : blocages (MIGRATION 012) ────────────────────────────
+export type Blocage = {
+  id:          string
+  bloqueur_id: string
+  bloque_id:   string
+  motif:       string | null
+  created_at:  string
+}
+
+// ── 26. TABLE : calls_webrtc (MIGRATION 013) ────────────────────────
+export type CallWebrtc = {
+  id:               string
+  livraison_id:     string | null
+  appelant_id:      string
+  appelant_role:    'client' | 'coursier' | 'admin'
+  destinataire_id:  string
+  statut:           'en_attente' | 'en_cours' | 'termine' | 'refuse' | 'manque' | 'annule'
+  offer_sdp:        string | null   // SDP de l'offre WebRTC (appelant)
+  answer_sdp:       string | null   // SDP de la réponse WebRTC (destinataire)
+  ice_candidates:   unknown[]       // candidats ICE agrégés (JSONB)
+  duree_secondes:   number | null   // durée totale de l'appel en secondes
+  debut_at:         string | null
+  fin_at:           string | null
+  created_at:       string
+  updated_at:       string
+}
+
+// ── 27. TABLE : webrtc_ice_candidates (MIGRATION 013) ───────────────
+export type WebrtcIceCandidate = {
+  id:         string
+  call_id:    string
+  user_id:    string
+  candidate:  string   // JSON stringifié du RTCIceCandidate
+  created_at: string
+}
+
 // ── HELPERS ──────────────────────────────────────────────────────────
 
 export async function getUtilisateur(userId: string): Promise<Utilisateur | null> {
