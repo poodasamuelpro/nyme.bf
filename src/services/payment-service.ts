@@ -3,7 +3,9 @@
 // SERVICE DE PAIEMENT CENTRALISÉ — NYME
 // Providers : DuniaPay (prioritaire) → Flutterwave → Orange Money (direct)
 // Modes : mobile_money | carte | wallet
+// CORRECTION AUDIT : require('crypto') → import crypto from 'crypto' (ESM)
 // ══════════════════════════════════════════════════════════════════
+import crypto from 'crypto'
 
 export type PaymentProvider = 'duniapay' | 'flutterwave' | 'orange' | 'wallet'
 export type PaymentMode     = 'mobile_money' | 'carte' | 'wallet' | 'cash'
@@ -70,7 +72,6 @@ async function initDuniaPay(params: PaymentInitParams): Promise<PaymentInitResul
   const siteUrl       = process.env.NEXT_PUBLIC_SITE_URL || 'https://nyme.bf'
 
   try {
-    // DuniaPay — initiation paiement mobile money ou carte
     const payload: Record<string, unknown> = {
       merchant_id:     merchantId,
       transaction_id:  transactionId,
@@ -82,8 +83,8 @@ async function initDuniaPay(params: PaymentInitParams): Promise<PaymentInitResul
         name:  params.clientName  || 'Client NYME',
         phone: params.clientPhone || '',
       },
-      return_url:   params.returnUrl   || `${siteUrl}/client/suivi/${params.livraisonId}?payment=success`,
-      cancel_url:   `${siteUrl}/client/suivi/${params.livraisonId}?payment=cancelled`,
+      return_url:   params.returnUrl   || `${siteUrl}/client/payment/success?livraison=${params.livraisonId}`,
+      cancel_url:   `${siteUrl}/client/payment/failed?livraison=${params.livraisonId}&reason=cancelled`,
       callback_url: params.callbackUrl || `${siteUrl}/api/payment/duniapay/callback`,
       metadata: {
         livraison_id: params.livraisonId,
@@ -92,7 +93,6 @@ async function initDuniaPay(params: PaymentInitParams): Promise<PaymentInitResul
       },
     }
 
-    // Mode mobile_money → on passe le téléphone directement
     if (params.mode === 'mobile_money' && params.clientPhone) {
       payload.payment_method = 'mobile_money'
       payload.phone          = params.clientPhone
@@ -186,8 +186,8 @@ async function initFlutterwave(params: PaymentInitParams): Promise<PaymentInitRe
         mode:         params.mode,
       },
       customer: {
-        email:      params.clientEmail,
-        name:       params.clientName  || 'Client NYME',
+        email:       params.clientEmail,
+        name:        params.clientName  || 'Client NYME',
         phonenumber: params.clientPhone || '',
       },
       customizations: {
@@ -195,7 +195,6 @@ async function initFlutterwave(params: PaymentInitParams): Promise<PaymentInitRe
         description: params.description || `Livraison #${params.livraisonId.slice(0, 8)}`,
         logo:        `${siteUrl}/logo.png`,
       },
-      // Mobile money Burkina Faso
       ...(params.mode === 'mobile_money' && params.clientPhone ? {
         payment_options: 'mobilemoneyghana,mobilemoneyrwanda,card',
       } : {
@@ -238,7 +237,6 @@ async function verifyFlutterwave(transactionId: string): Promise<PaymentVerifyRe
   if (!secretKey) return { success: false, status: 'failed', provider: 'flutterwave', externalRef: transactionId, error: 'Non configuré' }
 
   try {
-    // Vérification par tx_ref
     const res = await fetch(`https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${transactionId}`, {
       headers: { 'Authorization': `Bearer ${secretKey}` },
     })
@@ -268,13 +266,12 @@ async function verifyFlutterwave(transactionId: string): Promise<PaymentVerifyRe
 // ══════════════════════════════════════════════════════════════════
 // 3. ORANGE MONEY DIRECT (API officielle Orange BF)
 // Variables : ORANGE_API_KEY, ORANGE_MERCHANT_NUMBER, ORANGE_AUTH_HEADER
-// Docs : Orange Developer Portal
 // ══════════════════════════════════════════════════════════════════
 async function initOrangeMoney(params: PaymentInitParams): Promise<PaymentInitResult> {
-  const apiKey        = process.env.ORANGE_API_KEY?.trim()
-  const merchantNum   = process.env.ORANGE_MERCHANT_NUMBER?.trim()
-  const authHeader    = process.env.ORANGE_AUTH_HEADER?.trim()   // Base64 encoded
-  const baseUrl       = process.env.ORANGE_BASE_URL?.trim()      || 'https://api.orange.com/orange-money-webpay/bf/v1'
+  const apiKey      = process.env.ORANGE_API_KEY?.trim()
+  const merchantNum = process.env.ORANGE_MERCHANT_NUMBER?.trim()
+  const authHeader  = process.env.ORANGE_AUTH_HEADER?.trim()
+  const baseUrl     = process.env.ORANGE_BASE_URL?.trim() || 'https://api.orange.com/orange-money-webpay/bf/v1'
 
   if (!apiKey && !authHeader) {
     return { success: false, provider: 'orange', error: 'Orange Money non configuré' }
@@ -284,10 +281,9 @@ async function initOrangeMoney(params: PaymentInitParams): Promise<PaymentInitRe
   const siteUrl       = process.env.NEXT_PUBLIC_SITE_URL || 'https://nyme.bf'
 
   try {
-    // Orange Money BF — paiement via numéro de téléphone
     const headers: Record<string, string> = {
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
+      'Content-Type': 'application/json',
+      'Accept':       'application/json',
     }
 
     if (authHeader) {
@@ -297,15 +293,15 @@ async function initOrangeMoney(params: PaymentInitParams): Promise<PaymentInitRe
     }
 
     const payload = {
-      merchant_key:    merchantNum || '',
-      currency:        'OUV',     // Code Orange Money Burkina
-      order_id:        transactionId,
-      amount:          params.montant,
-      return_url:      params.returnUrl   || `${siteUrl}/client/suivi/${params.livraisonId}?payment=success`,
-      cancel_url:      `${siteUrl}/client/suivi/${params.livraisonId}?payment=cancelled`,
-      notif_url:       params.callbackUrl || `${siteUrl}/api/payment/orange/callback`,
-      lang:            'fr',
-      reference:       transactionId,
+      merchant_key: merchantNum || '',
+      currency:     'OUV',
+      order_id:     transactionId,
+      amount:       params.montant,
+      return_url:   params.returnUrl   || `${siteUrl}/client/payment/success?livraison=${params.livraisonId}`,
+      cancel_url:   `${siteUrl}/client/payment/failed?livraison=${params.livraisonId}&reason=cancelled`,
+      notif_url:    params.callbackUrl || `${siteUrl}/api/payment/orange/callback`,
+      lang:         'fr',
+      reference:    transactionId,
     }
 
     const res = await fetch(`${baseUrl}/webpayment`, {
@@ -382,12 +378,8 @@ class PaymentService {
   /**
    * Initie un paiement avec fallback automatique :
    * DuniaPay → Flutterwave → Orange Money
-   *
-   * Pour le mode 'wallet', aucune API externe n'est appelée.
-   * Pour le mode 'cash', aucune API externe n'est appelée.
    */
   async initPayment(params: PaymentInitParams): Promise<PaymentInitResult> {
-    // Cash ou wallet → pas d'API externe
     if (params.mode === 'cash' || params.mode === 'wallet') {
       return {
         success:       true,
@@ -397,21 +389,18 @@ class PaymentService {
       }
     }
 
-    // Essai DuniaPay
     if (process.env.DUNIAPAY_API_KEY?.trim()) {
       const r = await initDuniaPay(params)
       if (r.success) return r
       console.warn('[PaymentService] DuniaPay échoué, fallback Flutterwave')
     }
 
-    // Fallback Flutterwave
     if (process.env.FLUTTERWAVE_SECRET_KEY?.trim()) {
       const r = await initFlutterwave(params)
       if (r.success) return r
       console.warn('[PaymentService] Flutterwave échoué, fallback Orange Money')
     }
 
-    // Fallback Orange Money
     if (process.env.ORANGE_API_KEY?.trim() || process.env.ORANGE_AUTH_HEADER?.trim()) {
       return initOrangeMoney(params)
     }
@@ -468,13 +457,13 @@ class PaymentService {
 
   /**
    * Vérifie la signature d'un webhook DuniaPay.
+   * CORRECTION AUDIT : require('crypto') → import crypto (ESM)
    */
   verifyDuniaPayWebhook(payload: string, signature: string): boolean {
     const secret = process.env.DUNIAPAY_WEBHOOK_SECRET?.trim()
     if (!secret) return true  // pas de vérification en dev
 
     try {
-      const crypto = require('crypto') as typeof import('crypto')
       const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
       return expected === signature
     } catch {
@@ -484,13 +473,13 @@ class PaymentService {
 
   /**
    * Vérifie la signature d'un webhook Flutterwave.
+   * CORRECTION AUDIT : require('crypto') → import crypto (ESM)
    */
   verifyFlutterwaveWebhook(payload: string, signature: string): boolean {
     const secret = process.env.FLUTTERWAVE_WEBHOOK_SECRET?.trim() || process.env.FLUTTERWAVE_SECRET_KEY?.trim()
     if (!secret) return true
 
     try {
-      const crypto = require('crypto') as typeof import('crypto')
       const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
       return expected === signature
     } catch {
