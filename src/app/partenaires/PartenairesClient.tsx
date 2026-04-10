@@ -97,7 +97,7 @@ export default function PartenairesClient() {
         </div>
       </section>
 
-      {/* ── AVANTAGES — fond sombre comme le reste du site ── */}
+      {/* ── AVANTAGES — fond sombre ── */}
       <section className="py-16 sm:py-20 bg-nyme-bg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10 sm:mb-14">
@@ -126,13 +126,14 @@ export default function PartenairesClient() {
         </div>
       </section>
 
-      {/* ── ABONNEMENTS — fond légèrement plus clair ── */}
+      {/* ── ABONNEMENTS — section-light (fond clair) ── */}
       <section id="abonnements" className="py-16 sm:py-20 section-light">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10 sm:mb-14">
             <div className="badge badge-orange mb-4">💳 Abonnements mensuels</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-black text-nyme-text mb-3">Choisissez votre formule</h2>
-            <p className="text-nyme-text-muted text-base sm:text-lg max-w-xl mx-auto font-body">
+            {/* FIX : couleur explicite sur fond clair */}
+            <h2 className="font-heading text-3xl sm:text-4xl font-black mb-3" style={{ color: 'var(--nyme-text)' }}>Choisissez votre formule</h2>
+            <p className="text-base sm:text-lg max-w-xl mx-auto font-body" style={{ color: 'var(--nyme-text-muted)' }}>
               Engagement mensuel sans surprise. Résiliez à tout moment.
             </p>
           </div>
@@ -146,18 +147,20 @@ export default function PartenairesClient() {
                   </div>
                 )}
                 <div className="mb-5">
-                  <h3 className="font-heading text-xl font-black text-nyme-text mb-1">{plan.name}</h3>
-                  <p className="text-nyme-text-muted text-sm mb-3 font-body">{plan.desc}</p>
+                  {/* FIX : couleurs explicites sur fond blanc */}
+                  <h3 className="font-heading text-xl font-black mb-1" style={{ color: 'var(--nyme-text)' }}>{plan.name}</h3>
+                  <p className="text-sm mb-3 font-body" style={{ color: 'var(--nyme-text-muted)' }}>{plan.desc}</p>
                   <div className="flex items-baseline gap-1">
                     <span className={`font-heading text-3xl sm:text-4xl font-black ${plan.highlight ? 'text-nyme-orange' : 'text-nyme-primary'}`}>{plan.price}</span>
-                    {plan.period && <span className="text-nyme-text-muted text-sm font-body">{plan.period}</span>}
+                    {plan.period && <span className="text-sm font-body" style={{ color: 'var(--nyme-text-muted)' }}>{plan.period}</span>}
                   </div>
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5">
                       <CheckCircle size={15} className="text-nyme-green shrink-0 mt-0.5" />
-                      <span className="text-nyme-text text-sm font-body">{f}</span>
+                      {/* FIX : texte foncé sur fond blanc */}
+                      <span className="text-sm font-body" style={{ color: 'var(--nyme-text)' }}>{f}</span>
                     </li>
                   ))}
                 </ul>
@@ -168,7 +171,8 @@ export default function PartenairesClient() {
                   </a>
                   <a href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(`Bonjour NYME, je souhaite m'abonner au plan ${plan.name} (${plan.price} ${plan.period}).`)}`}
                     target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-nyme-border text-nyme-text-muted text-xs font-semibold hover:border-nyme-green hover:text-nyme-green transition-all duration-200 font-body">
+                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border text-xs font-semibold hover:border-nyme-green hover:text-nyme-green transition-all duration-200 font-body"
+                    style={{ borderColor: 'var(--nyme-border)', color: 'var(--nyme-text-muted)' }}>
                     💬 Discuter sur WhatsApp
                   </a>
                 </div>
@@ -212,13 +216,14 @@ export default function PartenairesClient() {
         </div>
       </section>
 
-      {/* ── FORMULAIRE — fond section-light ── */}
+      {/* ── FORMULAIRE — section-light (fond clair) ── */}
       <section id="contact" className="py-16 sm:py-20 section-light">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <div className="badge mb-4">✉️ Devenir partenaire</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-black text-nyme-text mb-3">Démarrons ensemble</h2>
-            <p className="text-nyme-text-muted text-base sm:text-lg max-w-xl mx-auto font-body">
+            {/* FIX : couleur explicite */}
+            <h2 className="font-heading text-3xl sm:text-4xl font-black mb-3" style={{ color: 'var(--nyme-text)' }}>Démarrons ensemble</h2>
+            <p className="text-base sm:text-lg max-w-xl mx-auto font-body" style={{ color: 'var(--nyme-text-muted)' }}>
               Remplissez ce formulaire ou contactez-nous directement. On vous répond sous 4h.
             </p>
             <a href="mailto:nyme.contact@gmail.com" className="inline-block mt-2 text-nyme-orange font-bold text-sm hover:underline font-body">
@@ -237,8 +242,9 @@ export default function PartenairesClient() {
                 <div key={item.title} className="card p-4 flex items-center gap-3">
                   <span className="text-2xl">{item.emoji}</span>
                   <div>
-                    <div className="font-bold text-nyme-text text-sm font-body">{item.title}</div>
-                    <div className="text-nyme-text-muted text-xs font-body">{item.sub}</div>
+                    {/* FIX : couleurs explicites dans .card (fond blanc) */}
+                    <div className="font-bold text-sm font-body" style={{ color: 'var(--nyme-text)' }}>{item.title}</div>
+                    <div className="text-xs font-body" style={{ color: 'var(--nyme-text-muted)' }}>{item.sub}</div>
                   </div>
                 </div>
               ))}
@@ -258,8 +264,10 @@ export default function PartenairesClient() {
                 {sent ? (
                   <div className="text-center py-10">
                     <div className="text-5xl mb-4">🎉</div>
-                    <h3 className="font-heading text-xl font-bold text-nyme-text mb-2">Demande envoyée !</h3>
-                    <p className="text-nyme-text-muted text-sm mb-4 font-body">Nous vous recontacterons dans les 4 heures à <strong className="text-nyme-primary">nyme.contact@gmail.com</strong>.</p>
+                    <h3 className="font-heading text-xl font-bold mb-2" style={{ color: 'var(--nyme-text)' }}>Demande envoyée !</h3>
+                    <p className="text-sm mb-4 font-body" style={{ color: 'var(--nyme-text-muted)' }}>
+                      Nous vous recontacterons dans les 4 heures à <strong style={{ color: 'var(--nyme-primary)' }}>nyme.contact@gmail.com</strong>.
+                    </p>
                     <a href={`https://wa.me/${WHATSAPP_NUMBER}?text=${whatsappMsg}`} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 btn-primary text-sm">
                       💬 Suivre sur WhatsApp
@@ -269,26 +277,26 @@ export default function PartenairesClient() {
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Entreprise / Nom *</label>
+                        <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Entreprise / Nom *</label>
                         <input type="text" required value={form.entreprise} onChange={e => setForm({...form, entreprise: e.target.value})} placeholder="Ma Boutique SARL" className="input-nyme" />
                       </div>
                       <div>
-                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Votre nom *</label>
+                        <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Votre nom *</label>
                         <input type="text" required value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} placeholder="Prénom Nom" className="input-nyme" />
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Email *</label>
+                        <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Email *</label>
                         <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="vous@entreprise.com" className="input-nyme" />
                       </div>
                       <div>
-                        <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Téléphone / WhatsApp *</label>
+                        <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Téléphone / WhatsApp *</label>
                         <input type="tel" required value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} placeholder="+226 XX XX XX XX" className="input-nyme" />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Plan souhaité</label>
+                      <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Plan souhaité</label>
                       <select value={form.plan} onChange={e => setForm({...form, plan: e.target.value})} className="input-nyme">
                         <option value="">Choisir un plan</option>
                         <option value="Starter">Starter — 45 000 FCFA/mois</option>
@@ -298,7 +306,7 @@ export default function PartenairesClient() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-nyme-text-muted text-xs uppercase tracking-wider font-semibold mb-1.5 font-body">Volume mensuel & besoins</label>
+                      <label className="block text-xs uppercase tracking-wider font-semibold mb-1.5 font-body" style={{ color: 'var(--nyme-text-muted)' }}>Volume mensuel & besoins</label>
                       <textarea rows={4} value={form.message} onChange={e => setForm({...form, message: e.target.value})}
                         placeholder="Ex: J'envoie environ 50 colis/mois depuis ma boutique à Ouaga 2000..." className="input-nyme resize-none" />
                     </div>
