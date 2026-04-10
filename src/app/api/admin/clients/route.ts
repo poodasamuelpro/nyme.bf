@@ -1,59 +1,63 @@
-// src/app/api/admin/clients/route.ts 
-// Gestion des clients — liste et toggle actif/inactif
+// src/app/api/admin/clients/route.ts — MODIFIÉ
+// ═══════════════════════════════════════════════════════════════════════════
+// CORRECTIONS AUDIT :
+//   1. Remplacement de la vérification admin dupliquée par verifyAdminRole()
+//   2. Ajout de la pagination (limit + offset) sur la liste des clients
+//   3. Retour du total réel en base (count) au lieu de clients.length
+// ═══════════════════════════════════════════════════════════════════════════
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { createClient } from '@supabase/supabase-js'
+import { verifyAdminRole } from '@/lib/auth-middleware'
 
-async function verifyAdmin(req: Request): Promise<{ ok: boolean; error?: string }> {
-  const token = (req.headers.get('authorization') || '').replace('Bearer ', '').trim()
-  if (!token) return { ok: false, error: 'Non autorisé' }
-
-  const supabaseCheck = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-  const { data: { user } } = await supabaseCheck.auth.getUser(token)
-  if (!user) return { ok: false, error: 'Non authentifié' }
-
-  const { data } = await supabaseAdmin
-    .from('utilisateurs').select('role').eq('id', user.id).single()
-  if (data?.role !== 'admin') return { ok: false, error: 'Accès refusé' }
-
-  return { ok: true }
-}
-
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const auth = await verifyAdmin(req)
+    const auth = await verifyAdminRole(req)
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 })
 
-    const url = new URL(req.url)
-    const role = url.searchParams.get('role') || 'client'
-    const limit = parseInt(url.searchParams.get('limit') || '200')
+    const { searchParams } = new URL(req.url)
+    const role   = searchParams.get('role')   || 'client'
+    const limit  = Math.min(parseInt(searchParams.get('limit')  || '50'), 200)  // max 200
+    const offset = parseInt(searchParams.get('offset') || '0')
+    const search = searchParams.get('search') || ''
 
-    const { data: clients, error } = await supabaseAdmin
+    // Requête avec pagination et count total
+    let query = supabaseAdmin
       .from('utilisateurs')
-      .select('id, nom, email, telephone, role, est_actif, est_verifie, created_at, avatar_url, note_moyenne')
+      .select(
+        'id, nom, email, telephone, role, est_actif, est_verifie, created_at, avatar_url, note_moyenne',
+        { count: 'exact' }
+      )
       .eq('role', role)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limit - 1)
+
+    // Filtrage par nom ou email si recherche
+    if (search.trim()) {
+      query = query.or(`nom.ilike.%${search}%,email.ilike.%${search}%,telephone.ilike.%${search}%`)
+    }
+
+    const { data: clients, error, count } = await query
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
     return NextResponse.json({
-      clients,
-      total: clients?.length || 0,
-      actifs: clients?.filter(c => c.est_actif).length || 0,
+      clients:      clients || [],
+      total:        count ?? 0,
+      actifs:       clients?.filter(c => c.est_actif).length || 0,
+      page_size:    limit,
+      page_offset:  offset,
+      has_more:     (count ?? 0) > offset + limit,
     })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Erreur serveur' }, { status: 500 })
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   try {
-    const auth = await verifyAdmin(req)
+    const auth = await verifyAdminRole(req)
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 })
 
     const { user_id, est_actif } = await req.json()
@@ -70,12 +74,24 @@ export async function PATCH(req: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-    return NextResponse.json({
-      success: true,
-      message: `Utilisateur ${est_actif ? 'activé' : 'désactivé'}`,
-      utilisateur: data,
+    // Notifier l'utilisateur de la suspension/réactivation
+    await supabaseAdmin.from('notifications').insert({
+      user_id,
+      type:    'compte',
+      titre:   est_actif ? '✅ Compte réactivé' : '⚠️ Compte suspendu',
+      message: est_actif
+        ? 'Votre compte NYME a été réactivé. Bienvenue à nouveau !'
+        : 'Votre compte NYME a été temporairement suspendu. Contactez le support.',
+      lu:      false,
     })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+
+    return NextResponse.json({
+      success:      true,
+      message:      `Utilisateur ${est_actif ? 'activé' : 'désactivé'}`,
+      utilisateur:  data,
+    })
+
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Erreur serveur' }, { status: 500 })
   }
 }
