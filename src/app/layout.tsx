@@ -1,7 +1,16 @@
+// src/app/layout.tsx
+// ═══════════════════════════════════════════════════════════════════════════
+// MODIFICATION : Ajout du CallProvider pour les appels WebRTC globaux.
+// Le CallProvider écoute les appels entrants pour TOUS les utilisateurs
+// connectés (client, coursier, admin) peu importe la page ouverte.
+// Les modals IncomingCallModal et ActiveCallUI sont rendus ici au niveau root.
+// ═══════════════════════════════════════════════════════════════════════════
 import type { Metadata } from 'next'
 import './globals.css'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import CallProvider from '@/components/calls/CallProvider'
+import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: {
@@ -47,9 +56,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-body bg-nyme-dark text-white antialiased">
-        <Header />
-        <main>{children}</main>
-        <Footer />
+        {/*
+          CallProvider : gestionnaire global des appels WebRTC.
+          - Écoute les appels entrants via Supabase Realtime pour l'utilisateur connecté.
+          - Affiche IncomingCallModal en superposition quand un appel arrive.
+          - Affiche ActiveCallUI en superposition pendant un appel actif.
+          - Accessible via le hook useCall() dans n'importe quel composant.
+        */}
+        <CallProvider>
+          <Header />
+          <main>{children}</main>
+          <Footer />
+        </CallProvider>
+
+        {/* Toast notifications — positionnées en dehors du CallProvider pour éviter les conflits z-index */}
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+            },
+          }}
+        />
       </body>
     </html>
   )
