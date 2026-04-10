@@ -1,4 +1,10 @@
-// src/app/client/wallet/page.tsx
+// src/app/client/wallet/page.tsx — MODIFIÉ
+// ═══════════════════════════════════════════════════════════════════════════
+// CORRECTION AUDIT : Finalisation recharge Wallet (UI)
+//   Avant : bouton de recharge redirigeait vers WhatsApp manuel
+//   Après : appel réel à /api/client/wallet/recharger qui initie le paiement
+//           via DuniaPay → Flutterwave → Orange Money
+// ═══════════════════════════════════════════════════════════════════════════
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -8,11 +14,11 @@ import { ArrowLeft, TrendingUp, TrendingDown, Clock, RefreshCw, CreditCard, Smar
 import toast from 'react-hot-toast'
 
 const TX_CFG: Record<string, { label: string; icon: string; credit: boolean }> = {
-  gain:             { label: 'Gain course',     icon: '💰', credit: true },
-  gain_course:      { label: 'Gain course',     icon: '💰', credit: true },
-  recharge:         { label: 'Recharge',        icon: '💳', credit: true },
-  bonus:            { label: 'Bonus',           icon: '🎁', credit: true },
-  remboursement:    { label: 'Remboursement',   icon: '↩️', credit: true },
+  gain:             { label: 'Gain course',     icon: '💰', credit: true  },
+  gain_course:      { label: 'Gain course',     icon: '💰', credit: true  },
+  recharge:         { label: 'Recharge',        icon: '💳', credit: true  },
+  bonus:            { label: 'Bonus',           icon: '🎁', credit: true  },
+  remboursement:    { label: 'Remboursement',   icon: '↩️', credit: true  },
   retrait:          { label: 'Retrait',         icon: '🏦', credit: false },
   commission:       { label: 'Commission NYME', icon: '📊', credit: false },
   paiement_course:  { label: 'Paiement',        icon: '📦', credit: false },
@@ -31,6 +37,7 @@ export default function ClientWalletPage() {
   const [montant,      setMontant]      = useState(5000)
   const [methodePmt,   setMethodePmt]   = useState<'mobile_money' | 'carte'>('mobile_money')
   const [submitting,   setSubmitting]   = useState(false)
+  const [phone,        setPhone]        = useState('')
 
   const fXOF  = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
   const fDate = (d: string) => new Intl.DateTimeFormat('fr-FR', {
@@ -42,7 +49,6 @@ export default function ClientWalletPage() {
     if (w) {
       setWallet(w as Wallet)
     } else {
-      // Créer le wallet s'il n'existe pas
       const { data: created } = await supabase
         .from('wallets')
         .insert({ user_id: uid, solde: 0 })
@@ -65,7 +71,7 @@ export default function ClientWalletPage() {
       if (!session) { router.replace('/login'); return }
       const { data: u } = await supabase
         .from('utilisateurs')
-        .select('role')
+        .select('role, telephone')
         .eq('id', session.user.id)
         .single()
       if (!u || (u.role !== 'client' && u.role !== 'coursier')) {
@@ -73,44 +79,83 @@ export default function ClientWalletPage() {
         return
       }
       setUserId(session.user.id)
+      if (u.telephone) setPhone(u.telephone)
       await loadData(session.user.id)
       setLoading(false)
     }
     init()
   }, [router, loadData])
 
-  // handleRecharge : redirige vers WhatsApp pendant la période sans CinetPay
-  // La RPC process_wallet_transaction existe en SQL mais le paiement Mobile Money
-  // n'est pas encore intégré (CinetPay). En attendant → WhatsApp manuel.
+  // ── CORRECTION AUDIT : Connexion à l'API réelle de recharge ─────────────
   const handleRecharge = async () => {
     if (!userId || montant < 500) {
       toast.error('Montant minimum 500 XOF')
       return
     }
+    if (methodePmt === 'mobile_money' && !phone.trim()) {
+      toast.error('Veuillez saisir votre numéro de téléphone Mobile Money')
+      return
+    }
+
     setSubmitting(true)
     try {
-      const methodeLabel = methodePmt === 'mobile_money' ? 'Mobile Money (Orange/Wave/Moov)' : 'Carte bancaire'
-      const message = encodeURIComponent(
-        `Bonjour NYME 👋\n\nJe souhaite recharger mon wallet de ${fXOF(montant)} via ${methodeLabel}.\n\nMon ID: ${userId.slice(0, 8).toUpperCase()}\n\nMerci de traiter ma demande.`
-      )
-      window.open(`https://wa.me/22600000000?text=${message}`, '_blank')
-      toast.success('Redirection vers WhatsApp — NYME traitera votre recharge sous 30 min')
-      setShowRecharge(false)
+      const session = await supabase.auth.getSession()
+      const token   = session.data.session?.access_token
+      if (!token) { toast.error('Session expirée — reconnectez-vous'); return }
+
+      const res = await fetch('/api/client/wallet/recharger', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          montant,
+          mode:       methodePmt,
+          phone:      phone.trim() || undefined,
+          return_url: `${window.location.origin}/client/wallet?recharge=success&montant=${montant}`,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erreur initiation paiement')
+      }
+
+      if (data.paymentUrl) {
+        toast.success(`Redirection vers ${data.provider || 'le paiement'}...`)
+        setShowRecharge(false)
+        // Redirection vers la page de paiement externe
+        window.location.href = data.paymentUrl
+      } else {
+        toast.success('Recharge initiée — vous serez notifié par SMS.')
+        setShowRecharge(false)
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la recharge')
     } finally {
       setSubmitting(false)
     }
-
-    // TODO : Décommenter quand CinetPay sera intégré
-    // const { error } = await supabase.rpc('process_wallet_transaction', {
-    //   p_user_id: userId,
-    //   p_type: 'recharge',
-    //   p_montant: montant,
-    //   p_reference: `RECHARGE_${userId}_${Date.now()}`,
-    //   p_note: `Recharge ${methodePmt} — ${fXOF(montant)}`,
-    //   p_payment_method: methodePmt,
-    // })
-    // if (error) throw new Error(error.message)
   }
+
+  // Gérer le retour de paiement avec succès (paramètre URL)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('recharge') === 'success') {
+        const montantParam = params.get('montant')
+        toast.success(
+          montantParam
+            ? `✅ Recharge de ${Number(montantParam).toLocaleString('fr-FR')} XOF confirmée !`
+            : '✅ Recharge confirmée !'
+        )
+        // Nettoyer les paramètres URL
+        window.history.replaceState({}, '', '/client/wallet')
+        if (userId) loadData(userId)
+      }
+    }
+  }, [userId, loadData])
 
   const stats = {
     totalCredits: transactions
@@ -132,7 +177,8 @@ export default function ClientWalletPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header avec bouton retour */}
+
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
           <button
@@ -207,10 +253,13 @@ export default function ClientWalletPage() {
           </button>
         </div>
 
-        {/* Formulaire recharge */}
+        {/* ── FORMULAIRE RECHARGE — CONNECTÉ À L'API RÉELLE ── */}
         {showRecharge && (
           <div className="bg-white rounded-2xl p-6 border-2 border-blue-200 shadow-sm space-y-4">
-            <h3 className="font-bold text-gray-900">Recharger le wallet</h3>
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <CreditCard size={16} className="text-blue-600" />
+              Recharger le wallet
+            </h3>
 
             {/* Méthode paiement */}
             <div>
@@ -234,6 +283,23 @@ export default function ClientWalletPage() {
               </div>
             </div>
 
+            {/* Numéro téléphone si Mobile Money */}
+            {methodePmt === 'mobile_money' && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Votre numéro Mobile Money *</p>
+                <div className="relative">
+                  <Smartphone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="tel"
+                    placeholder="+226 XX XX XX XX"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Montants rapides */}
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Montant rapide</p>
@@ -255,7 +321,7 @@ export default function ClientWalletPage() {
             </div>
 
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Ou saisissez un montant</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Ou saisissez un montant (XOF)</p>
               <div className="relative">
                 <input
                   type="number"
@@ -267,13 +333,17 @@ export default function ClientWalletPage() {
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">XOF</span>
               </div>
+              {montant > 0 && montant < 500 && (
+                <p className="text-red-500 text-xs mt-1">Minimum 500 XOF</p>
+              )}
             </div>
 
-            <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
-              <p className="text-amber-700 text-xs font-semibold mb-1">⚠️ Recharge via WhatsApp</p>
-              <p className="text-amber-600 text-xs">
-                Le paiement automatique est en cours d'intégration. En cliquant "Recharger",
-                vous serez redirigé vers WhatsApp pour une recharge manuelle traitée sous 30 min.
+            {/* Info paiement sécurisé */}
+            <div className="bg-green-50 rounded-xl p-3 border border-green-200">
+              <p className="text-green-700 text-xs font-semibold mb-1">🔒 Paiement sécurisé</p>
+              <p className="text-green-600 text-xs">
+                Votre paiement sera traité par {methodePmt === 'mobile_money' ? 'DuniaPay / Orange Money' : 'DuniaPay / Flutterwave'}.
+                Votre wallet sera crédité automatiquement après confirmation.
               </p>
             </div>
 
@@ -287,9 +357,12 @@ export default function ClientWalletPage() {
               <button
                 onClick={handleRecharge}
                 disabled={submitting || montant < 500}
-                className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
               >
-                {submitting ? 'Ouverture...' : `💬 Recharger ${fXOF(montant)}`}
+                {submitting
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Redirection...</>
+                  : `💳 Payer ${fXOF(montant)}`
+                }
               </button>
             </div>
           </div>
