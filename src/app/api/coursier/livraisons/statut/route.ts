@@ -1,18 +1,11 @@
-// src/app/api/coursier/livraisons/statut/route.ts
+// src/app/api/coursier/livraisons/statut/route.ts — MODIFIÉ
 // ═══════════════════════════════════════════════════════════════════════════
-// CORRECTION AUDIT — Gestion des commissions :
-//   Le trigger SQL calculate_and_add_commission (migration 003) se déclenche
-//   sur UPDATE(statut, statut_paiement) avec statut='livree' ET statut_paiement='paye'.
-//   Conflit : cette route appliquait aussi process_wallet_transaction manuellement.
-//
-//   SOLUTION RETENUE : Désactiver le trigger SQL pour les livraisons cash
-//   (où statut_paiement reste 'en_attente' à la livraison).
-//   Ce fichier reste la seule logique de commission pour les livraisons cash.
-//   Pour les livraisons mobile_money/carte (statut_paiement='paye'), le trigger
-//   s'active et cette route NE DOIT PAS dupliquer le calcul.
-//
-//   Règle : si mode_paiement !== 'cash', on ne crédite PAS ici
-//   (le trigger SQL gère la commission après confirmation paiement).
+// CORRECTIONS AUDIT :
+//   1. Ajout du support de la preuve de livraison (photo optionnelle)
+//      lors du passage au statut 'livree'. Upload vers Supabase Storage.
+//   2. Conservation intégrale de toute la logique existante (commissions,
+//      transitions, notifications FCM, wallet cash).
+//   3. Le champ 'preuve_livraison_url' est optionnel mais recommandé.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -22,7 +15,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getGainCoursier } from '@/lib/tarifs'
 import { firebaseNotificationService } from '@/services/firebase-notification-service'
 
-// Utilise les valeurs exactes de la CHECK constraint SQL
+// Valeurs exactes de la CHECK constraint SQL
 // Note: 'en_rout_depart' SANS 'e' — orthographe réelle de la BDD
 const STATUS_MESSAGES: Record<string, string> = {
   en_rout_depart:   '🛵 Le coursier est en route vers votre colis',
@@ -40,11 +33,35 @@ export async function POST(req: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
 
-    const { livraison_id, statut, coursier_id } = await req.json()
-    if (!livraison_id || !statut || !coursier_id)
-      return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
-    if (coursier_id !== session.user.id)
-      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    // Parsing multipart/form-data pour supporter la photo de preuve
+    const contentType = req.headers.get('content-type') || ''
+    let livraison_id: string
+    let statut: string
+    let coursier_id: string
+    let preuveFile: File | null = null
+
+    if (contentType.includes('multipart/form-data')) {
+      // Avec photo (preuve de livraison)
+      const formData = await req.formData()
+      livraison_id  = formData.get('livraison_id') as string
+      statut        = formData.get('statut') as string
+      coursier_id   = formData.get('coursier_id') as string
+      preuveFile    = formData.get('preuve_photo') as File | null
+    } else {
+      // Sans photo (JSON classique)
+      const body = await req.json()
+      livraison_id  = body.livraison_id
+      statut        = body.statut
+      coursier_id   = body.coursier_id
+    }
+
+    if (!livraison_id || !statut || !coursier_id) {
+      return NextResponse.json({ error: 'Paramètres manquants : livraison_id, statut, coursier_id' }, { status: 400 })
+    }
+
+    if (coursier_id !== session.user.id) {
+      return NextResponse.json({ error: 'Accès refusé — identité coursier invalide' }, { status: 403 })
+    }
 
     const { data: livraison } = await supabaseAdmin
       .from('livraisons')
@@ -53,37 +70,40 @@ export async function POST(req: NextRequest) {
       .eq('coursier_id', coursier_id)
       .single()
 
-    if (!livraison)
-      return NextResponse.json({ error: 'Livraison non trouvée ou non assignée' }, { status: 404 })
+    if (!livraison) {
+      return NextResponse.json({ error: 'Livraison non trouvée ou non assignée à ce coursier' }, { status: 404 })
+    }
 
     // Transitions autorisées — 'en_rout_depart' SANS 'e' = valeur SQL réelle
     const TRANSITIONS: Record<string, string[]> = {
       acceptee:         ['en_rout_depart', 'annulee'],
       en_rout_depart:   ['colis_recupere',  'annulee'],
-      colis_recupere:   ['en_route_arrivee','annulee'],
+      colis_recupere:   ['en_route_arrivee', 'annulee'],
       en_route_arrivee: ['livree',           'annulee'],
     }
+
     const allowed = TRANSITIONS[livraison.statut] || []
-    if (!allowed.includes(statut))
+    if (!allowed.includes(statut)) {
       return NextResponse.json({
         error: `Transition ${livraison.statut} → ${statut} non autorisée`,
+        allowed,
       }, { status: 400 })
+    }
 
     const updateData: Record<string, unknown> = { statut }
-
-    // ────────────────────────────────────────────────────────────────────
-    // Livraison confirmée
-    // ────────────────────────────────────────────────────────────────────
     let gainCoursierFinal   = 0
     let commissionNymeFinal = 0
 
+    // ────────────────────────────────────────────────────────────────
+    // CAS 1 : Livraison confirmée
+    // ────────────────────────────────────────────────────────────────
     if (statut === 'livree') {
-      updateData.livree_at = new Date().toISOString()
+      updateData.livree_at       = new Date().toISOString()
       updateData.is_paid_to_courier = true
 
-      const prixTotal   = Number(livraison.prix_final || livraison.prix_calcule)
-      const typeCoarse  = (livraison.type || 'immediate') as 'immediate' | 'urgente' | 'programmee'
-      const modePay     = livraison.mode_paiement || 'cash'
+      const prixTotal  = Number(livraison.prix_final || livraison.prix_calcule)
+      const typeCoarse = (livraison.type || 'immediate') as 'immediate' | 'urgente' | 'programmee'
+      const modePay    = livraison.mode_paiement || 'cash'
 
       const { gainCoursier, commissionNyme } = await getGainCoursier(prixTotal, typeCoarse)
       gainCoursierFinal   = gainCoursier
@@ -92,21 +112,46 @@ export async function POST(req: NextRequest) {
 
       console.log(`[statut] livree — prix: ${prixTotal} | type: ${typeCoarse} | mode: ${modePay} | commission: ${commissionNyme} XOF | gain: ${gainCoursier} XOF`)
 
-      // ── CORRECTION AUDIT : Éviter la double commission ────────────────
-      // Le trigger SQL calculate_and_add_commission se déclenche quand :
-      //   statut='livree' ET statut_paiement='paye'
-      //
-      // - Mode CASH : statut_paiement reste 'en_attente' → trigger NE se déclenche PAS
-      //   → Cette route est responsable du crédit wallet coursier
-      // - Mode mobile_money/carte : statut_paiement='paye' (après webhook paiement)
-      //   → Le trigger SQL gère déjà la commission
-      //   → Cette route NE doit PAS créditer à nouveau
+      // ── Upload preuve de livraison (optionnelle) ─────────────────────
+      if (preuveFile && preuveFile.size > 0) {
+        try {
+          if (preuveFile.size > 10 * 1024 * 1024) {
+            console.warn('[statut] Preuve livraison trop grande (max 10MB) — ignorée')
+          } else {
+            const ext  = preuveFile.name.split('.').pop() || 'jpg'
+            const path = `preuves-livraison/${livraison_id}/${coursier_id}_${Date.now()}.${ext}`
 
-      const isCash = modePay === 'cash' || modePay === 'wallet'
+            const { error: uploadErr } = await supabaseAdmin.storage
+              .from('preuves-livraison')
+              .upload(path, preuveFile, { upsert: false })
+
+            if (!uploadErr) {
+              const { data: { publicUrl } } = supabaseAdmin.storage
+                .from('preuves-livraison')
+                .getPublicUrl(path)
+
+              updateData.preuve_livraison_url = publicUrl
+              console.log('[statut] Preuve de livraison uploadée:', publicUrl)
+            } else {
+              console.warn('[statut] Upload preuve échoué (non bloquant):', uploadErr.message)
+            }
+          }
+        } catch (preuveErr) {
+          console.warn('[statut] Erreur upload preuve (non bloquant):', preuveErr)
+        }
+      }
+
+      // ── Gestion commission wallet (éviter double commission) ────────
+      // Règle :
+      //   - Mode CASH/WALLET : statut_paiement reste 'en_attente' → créditer maintenant
+      //   - Mode mobile_money : trigger SQL calculate_and_add_commission se déclenche
+      //     quand statut='livree' ET statut_paiement='paye' → NE PAS créditer ici
+
+      const isCash     = modePay === 'cash' || modePay === 'wallet'
       const isAlreadyPaid = livraison.statut_paiement === 'paye'
 
       if (isCash && !isAlreadyPaid) {
-        // 1. Créditer le gain net au coursier (UNIQUEMENT pour les paiements cash)
+        // 1. Créditer gain net au coursier
         const { data: txIdGain, error: gainErr } = await supabaseAdmin.rpc('process_wallet_transaction', {
           p_user_id:        coursier_id,
           p_type:           'gain',
@@ -136,10 +181,10 @@ export async function POST(req: NextRequest) {
           if (commErr) console.error('[statut] commission NYME ECHEC:', commErr.message)
         }
 
-        // 3. Marquer comme payé pour les livraisons cash (paiement à la remise)
+        // 3. Marquer livraison payée
         updateData.statut_paiement = 'paye'
 
-        // 4. Insérer le paiement
+        // 4. Enregistrer dans paiements
         await supabaseAdmin.from('paiements').insert({
           livraison_id,
           montant:   prixTotal,
@@ -155,16 +200,14 @@ export async function POST(req: NextRequest) {
             credite_par:      'route_statut_cash',
           },
         })
+
       } else if (!isCash && isAlreadyPaid) {
-        // Paiement mobile money déjà traité par le webhook de paiement
-        // Le trigger SQL s'est déjà chargé de la commission
         console.log('[statut] Livraison mobile money déjà payée — commission gérée par trigger SQL')
       } else {
-        // Paiement mobile money en attente — ne créditer qu'après confirmation paiement
         console.log('[statut] Livraison mobile money en attente de paiement — pas de crédit wallet maintenant')
       }
 
-      // 5. Mettre à jour les stats coursier
+      // 5. Mettre à jour stats coursier
       const { data: coursierActuel } = await supabaseAdmin
         .from('coursiers')
         .select('total_courses, total_gains')
@@ -172,14 +215,14 @@ export async function POST(req: NextRequest) {
         .single()
 
       await supabaseAdmin.from('coursiers').update({
-        statut:             'disponible',
-        total_courses:      (coursierActuel?.total_courses || 0) + 1,
-        total_gains:        (Number(coursierActuel?.total_gains) || 0) + (isCash ? gainCoursier : 0),
-        derniere_activite:  new Date().toISOString(),
+        statut:            'disponible',
+        total_courses:     (coursierActuel?.total_courses || 0) + 1,
+        total_gains:       (Number(coursierActuel?.total_gains) || 0) + (isCash ? gainCoursier : 0),
+        derniere_activite: new Date().toISOString(),
       }).eq('id', coursier_id)
     }
 
-    // ── Annulation ─────────────────────────────────────────────────────────
+    // ── CAS 2 : Annulation ─────────────────────────────────────────────
     if (statut === 'annulee') {
       updateData.annulee_at  = new Date().toISOString()
       updateData.annulee_par = 'coursier'
@@ -189,7 +232,7 @@ export async function POST(req: NextRequest) {
       }).eq('id', coursier_id)
     }
 
-    // ── Mise à jour de la livraison ────────────────────────────────────────
+    // ── Mise à jour de la livraison ──────────────────────────────────────
     const { error: updateErr } = await supabaseAdmin
       .from('livraisons')
       .update(updateData)
@@ -200,11 +243,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Erreur mise à jour livraison' }, { status: 500 })
     }
 
-    // ── Historique des statuts ────────────────────────────────────────────
+    // ── Historique statuts ────────────────────────────────────────────────
     await supabaseAdmin.from('statuts_livraison').insert({
       livraison_id,
       statut,
-      note: `Statut mis à jour par coursier ${coursier_id.slice(0, 8)}`,
+      note: `Statut mis à jour par coursier ${coursier_id.slice(0, 8)} — ${new Date().toLocaleString('fr-FR')}`,
     })
 
     // ── Notification in-app au client ────────────────────────────────────
@@ -215,11 +258,15 @@ export async function POST(req: NextRequest) {
         type:    'statut_livraison',
         titre:   `Livraison #${livraison_id.slice(0, 8).toUpperCase()}`,
         message,
-        data:    { livraison_id, statut },
-        lu:      false,
+        data:    {
+          livraison_id,
+          statut,
+          preuve_url: updateData.preuve_livraison_url || null,
+        },
+        lu: false,
       })
 
-      // ── Notification push FCM au client ──────────────────────────────
+      // ── Notification push FCM ────────────────────────────────────────
       if (firebaseNotificationService.isConfigured()) {
         try {
           await firebaseNotificationService.sendToUser(
@@ -227,12 +274,16 @@ export async function POST(req: NextRequest) {
             {
               title: `Livraison #${livraison_id.slice(0, 8).toUpperCase()}`,
               body:  message,
-              data:  { livraison_id, statut, type: 'statut_livraison' },
+              data:  {
+                livraison_id,
+                statut,
+                type: 'statut_livraison',
+              },
             },
             'statut_livraison'
           )
         } catch (fcmErr) {
-          console.warn('[statut] Notification FCM client échouée:', fcmErr)
+          console.warn('[statut] Notification FCM client échouée (non bloquant):', fcmErr)
         }
       }
     }
@@ -240,6 +291,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       statut,
+      preuve_uploadee: !!updateData.preuve_livraison_url,
       ...(statut === 'livree' ? {
         gain_coursier:   gainCoursierFinal,
         commission_nyme: commissionNymeFinal,
