@@ -1,3 +1,4 @@
+```typescript
 // src/services/firebase-notification-service.ts
 // ═══════════════════════════════════════════════════════════════════════════
 // SERVICE FIREBASE CLOUD MESSAGING (FCM) — NYME
@@ -49,18 +50,12 @@ class FirebaseNotificationService {
 
   // ── Token d'accès OAuth2 ────────────────────────────────────────────────
 
-  /**
-   * Obtient un token d'accès OAuth2 pour l'API FCM v1.
-   * Utilise le service account JSON pour créer un JWT et l'échanger contre un token.
-   * Le token est mis en cache jusqu'à expiration.
-   */
   private async getAccessToken(): Promise<string | null> {
     if (!this.serviceAccount) {
       console.error('[FCM] Service account non configuré (FIREBASE_SERVICE_ACCOUNT_JSON)')
       return null
     }
 
-    // Retourner le token en cache s'il est encore valide (marge de 60s)
     if (cachedAccessToken && Date.now() < tokenExpiry - 60000) {
       return cachedAccessToken
     }
@@ -77,9 +72,8 @@ class FirebaseNotificationService {
       }
 
       const now        = Math.floor(Date.now() / 1000)
-      const expiration = now + 3600  // 1 heure
+      const expiration = now + 3600
 
-      // Créer le JWT header et payload
       const header  = { alg: 'RS256', typ: 'JWT' }
       const payload = {
         iss:   clientEmail,
@@ -94,7 +88,6 @@ class FirebaseNotificationService {
       const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
       const signingInput   = `${encodedHeader}.${encodedPayload}`
 
-      // Signer avec la clé privée RSA
       const pemKey = privateKey.replace(/\\n/g, '\n')
       const cryptoKey = await crypto.subtle.importKey(
         'pkcs8',
@@ -110,12 +103,13 @@ class FirebaseNotificationService {
         new TextEncoder().encode(signingInput)
       )
 
-      const encodedSig = btoa(String.fromCharCode(...new Uint8Array(signature)))
+      // FIX : Array.from() au lieu du spread sur Uint8Array (incompatible selon tsconfig target)
+      const uint8 = new Uint8Array(signature)
+      const encodedSig = btoa(Array.from(uint8, b => String.fromCharCode(b)).join(''))
         .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
       const jwt = `${signingInput}.${encodedSig}`
 
-      // Échanger le JWT contre un access token
       const res = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -144,9 +138,6 @@ class FirebaseNotificationService {
 
   // ── Envoi d'une notification à un token FCM ──────────────────────────────
 
-  /**
-   * Envoie une notification push à un token FCM spécifique.
-   */
   async sendToToken(
     fcmToken:    string,
     payload:     FCMNotificationPayload
@@ -185,7 +176,6 @@ class FirebaseNotificationService {
       },
     }
 
-    // Ajouter les données supplémentaires si présentes
     if (payload.data && Object.keys(payload.data).length > 0) {
       message.data = payload.data
     }
@@ -221,17 +211,11 @@ class FirebaseNotificationService {
 
   // ── Envoi vers un utilisateur Supabase ───────────────────────────────────
 
-  /**
-   * Envoie une notification push à un utilisateur par son ID Supabase.
-   * Récupère automatiquement le fcm_token depuis la table utilisateurs.
-   * Insère aussi la notification dans la table notifications (in-app).
-   */
   async sendToUser(
     userId:       string,
     payload:      FCMNotificationPayload,
     type?:        string
   ): Promise<FCMSendResult> {
-    // Récupérer le FCM token de l'utilisateur
     const { data: user, error } = await supabaseAdmin
       .from('utilisateurs')
       .select('fcm_token')
@@ -239,18 +223,12 @@ class FirebaseNotificationService {
       .single()
 
     if (error || !user?.fcm_token) {
-      // Pas de token FCM — l'utilisateur n'a pas activé les notifications push
-      // On insère quand même la notification in-app
       return { success: false, error: 'Utilisateur sans token FCM' }
     }
 
     return this.sendToToken(user.fcm_token, payload)
   }
 
-  /**
-   * Envoie une notification à plusieurs utilisateurs en parallèle.
-   * Ignore silencieusement ceux sans token FCM.
-   */
   async sendToMultipleUsers(
     userIds:  string[],
     payload:  FCMNotificationPayload
@@ -267,10 +245,6 @@ class FirebaseNotificationService {
       .map(r => (r as PromiseFulfilledResult<{ userId: string; result: FCMSendResult }>).value)
   }
 
-  /**
-   * Envoie une notification de statut de livraison au client et au coursier.
-   * Insère aussi dans la table notifications.
-   */
   async notifyLivraisonStatut(params: {
     clientId:    string
     coursierId?: string
@@ -292,18 +266,13 @@ class FirebaseNotificationService {
       clickAction: 'FLUTTER_NOTIFICATION_CLICK',
     }
 
-    // Notifier client
     await this.sendToUser(params.clientId, payload, 'statut_livraison')
 
-    // Notifier coursier si présent
     if (params.coursierId) {
       await this.sendToUser(params.coursierId, payload, 'statut_livraison')
     }
   }
 
-  /**
-   * Notifie les coursiers disponibles d'une nouvelle demande de livraison.
-   */
   async notifyNewLivraisonToCoursiers(
     coursierIds: string[],
     livraisonId: string,
@@ -327,18 +296,12 @@ class FirebaseNotificationService {
 
   // ── Vérification de disponibilité ────────────────────────────────────────
 
-  /**
-   * Vérifie si le service FCM est correctement configuré.
-   */
   isConfigured(): boolean {
     return !!(this.projectId && this.serviceAccount)
   }
 
   // ── Utilitaires ──────────────────────────────────────────────────────────
 
-  /**
-   * Convertit une clé PEM en ArrayBuffer pour Web Crypto API.
-   */
   private pemToArrayBuffer(pem: string): ArrayBuffer {
     const lines = pem
       .replace('-----BEGIN PRIVATE KEY-----', '')
@@ -355,3 +318,4 @@ class FirebaseNotificationService {
 
 // ── Singleton exporté ─────────────────────────────────────────────────────────
 export const firebaseNotificationService = new FirebaseNotificationService()
+```
