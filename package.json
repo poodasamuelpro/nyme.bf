@@ -1,6 +1,6 @@
 {
   "name": "nyme-website",
-  "version": "1.0.0", 
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -22,7 +22,8 @@
     "react-leaflet": "^4.2.1",
     "react-hot-toast": "^2.4.1",
     "@mapbox/polyline": "^1.2.1",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20",
