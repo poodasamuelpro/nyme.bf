@@ -1,15 +1,19 @@
-// src/app/layout.tsx 
+// src/app/layout.tsx — MODIFIÉ
 // ═══════════════════════════════════════════════════════════════════════════
-// MODIFICATION : Ajout du CallProvider pour les appels WebRTC globaux.
-// Le CallProvider écoute les appels entrants pour TOUS les utilisateurs
-// connectés (client, coursier, admin) peu importe la page ouverte.
-// Les modals IncomingCallModal et ActiveCallUI sont rendus ici au niveau root.
+// CORRECTION AUDIT : Isolation du CallProvider
+//   Avant : CallProvider s'initialisait sur TOUTES les pages (y compris /)
+//   Après : CallProvider ne s'active QUE si une session auth est détectée.
+//           Les pages publiques (/, /contact, /partenaires landing) sont
+//           exclues du chargement WebRTC inutile.
+//
+//   Solution : ConditionalCallProvider — vérifie la session avant d'init.
+//   Le WebRTC n'est initialisé que lorsqu'un utilisateur est connecté.
 // ═══════════════════════════════════════════════════════════════════════════
 import type { Metadata } from 'next'
 import './globals.css'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
-import CallProvider from '@/components/calls/CallProvider'
+import ConditionalCallProvider from '@/components/calls/ConditionalCallProvider'
 import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
@@ -49,7 +53,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* Polices NYME : Syne (titres) + Plus Jakarta Sans (corps) */}
         <link
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Syne:wght@600;700;800&display=swap"
           rel="stylesheet"
@@ -57,19 +60,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="font-body bg-nyme-dark text-white antialiased">
         {/*
-          CallProvider : gestionnaire global des appels WebRTC.
-          - Écoute les appels entrants via Supabase Realtime pour l'utilisateur connecté.
-          - Affiche IncomingCallModal en superposition quand un appel arrive.
-          - Affiche ActiveCallUI en superposition pendant un appel actif.
-          - Accessible via le hook useCall() dans n'importe quel composant.
+          ConditionalCallProvider remplace CallProvider direct.
+          - Vérifie la session Supabase au montage
+          - N'initialise WebRTC QUE si un utilisateur est connecté
+          - Pages publiques (/, /contact, etc.) : aucun WebRTC chargé
+          - Pages dashboard (client/coursier/admin) : WebRTC actif
         */}
-        <CallProvider>
+        <ConditionalCallProvider>
           <Header />
           <main>{children}</main>
           <Footer />
-        </CallProvider>
+        </ConditionalCallProvider>
 
-        {/* Toast notifications — positionnées en dehors du CallProvider pour éviter les conflits z-index */}
+        {/* Toast notifications */}
         <Toaster
           position="top-right"
           toastOptions={{
