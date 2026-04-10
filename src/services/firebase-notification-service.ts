@@ -1,4 +1,3 @@
-```typescript
 // src/services/firebase-notification-service.ts
 // ═══════════════════════════════════════════════════════════════════════════
 // SERVICE FIREBASE CLOUD MESSAGING (FCM) — NYME
@@ -318,4 +317,3 @@ class FirebaseNotificationService {
 
 // ── Singleton exporté ─────────────────────────────────────────────────────────
 export const firebaseNotificationService = new FirebaseNotificationService()
-```
