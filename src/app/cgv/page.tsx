@@ -38,7 +38,7 @@ NYME permet aux clients de commander une livraison ponctuelle selon trois modali
 
 NYME propose des formules d'abonnement mensuel destinées aux professionnels et entreprises ayant des besoins réguliers de livraison :
 
-• **Formule Starter** : jusqu'à 30 livraisons par mois, livreur dédié assigné, délai de livraison sous 45 minutes, suivi GPS, tableau de bord simple, support par email.
+• **Formule Starter** : jusqu'à 40 livraisons par mois, livreur dédié assigné, délai de livraison sous 45 minutes, suivi GPS, tableau de bord simple, support par email.
 
 • **Formule Business** : jusqu'à 100 livraisons par mois, livreur dédié quotidien, livraison express sous 30 minutes, suivi GPS, tableau de bord avancé avec rapports, traçabilité complète (photos à la récupération et à la livraison), communication WhatsApp Business, support prioritaire 7j/7.
 
@@ -120,8 +120,8 @@ NYME perçoit une commission sur chaque livraison. Cette commission est déduite
 
 **4.4 Tarification des abonnements partenaires**
 
-• **Starter** : 25 000 FCFA / mois (jusqu'à 30 livraisons)
-• **Business** : 65 000 FCFA / mois (jusqu'à 100 livraisons)
+• **Starter** : 45 000 FCFA / mois (jusqu'à 40 livraisons)
+• **Business** : 90 000 FCFA / mois (jusqu'à 100 livraisons)
 • **Enterprise** : sur devis personnalisé (volume illimité)
 
 Les abonnements sont facturés mensuellement, à date fixe. Les livraisons dépassant le quota mensuel inclus sont facturées à l'acte selon le tarif en vigueur.
@@ -145,9 +145,9 @@ NYME accepte les modes de paiement suivants :
 
 Les paiements Mobile Money effectués via l'application sont traités de manière sécurisée par nos partenaires de paiement certifiés. Le Client reçoit une confirmation de paiement par notification dans l'application.
 
-**5.3 Wallet NYME**
+**5.3 Wallet NYME — Recharge et paiement (Clients)**
 
-Le Wallet NYME est un portefeuille électronique intégré à votre compte :
+Le Wallet NYME est un portefeuille électronique intégré à votre compte client :
 • Rechargeable via Orange Money, Moov Money ou Wave
 • Utilisable pour régler vos livraisons directement depuis l'application
 • Le solde n'est pas remboursable en espèces sauf fermeture du compte
@@ -158,7 +158,31 @@ Les abonnements sont réglés mensuellement. Le paiement intervient le premier j
 
 **5.5 Sécurité des transactions**
 
-Toutes les transactions financières sont sécurisées par protocole chiffré. NYME ne stocke jamais vos codes secrets Mobile Money ou identifiants bancaires. En cas de doute sur une transaction, contactez-nous immédiatement.`
+Toutes les transactions financières sont sécurisées par protocole chiffré. NYME ne stocke jamais vos codes secrets Mobile Money ou identifiants bancaires. En cas de doute sur une transaction, contactez-nous immédiatement.
+
+**5.6 Wallet Coursier — Paiement et retrait**
+
+**5.6.1 Crédit des gains**
+
+Dès qu'une livraison est confirmée par le client, le montant convenu (prix de la course après déduction de la commission NYME) est automatiquement crédité sur le wallet NYME du coursier. Le coursier reçoit une notification instantanée.
+
+**5.6.2 Retrait des gains**
+
+Le coursier peut retirer ses gains à tout moment directement depuis l'application mobile, sans minimum de retrait obligatoire. Les retraits sont possibles vers :
+
+• Orange Money
+• Moov Money
+• Wave
+
+Le délai de traitement est instantané. Les fonds sont disponibles sur le compte Mobile Money du coursier dans un délai maximal de quelques minutes.
+
+**5.6.3 Sécurité**
+
+Le wallet NYME est sécurisé. Le coursier doit confirmer chaque retrait par son code PIN ou authentification biométrique (empreinte digitale / Face ID selon appareil).
+
+**5.6.4 Plafond et historique**
+
+Aucun plafond maximum n'est appliqué sur le wallet coursier. L'historique complet des gains et des retraits est consultable à tout moment depuis l'espace coursier.`
   },
   {
     id: 'annulation', title: '6. Annulations et remboursements',
@@ -329,7 +353,7 @@ export default function CGVPage() {
             Conditions Générales de Vente
           </h1>
           <p className="text-white/60 font-body text-base">
-            Dernière mise à jour : Avril 2025 · Version 1.0
+            Dernière mise à jour : Avril 2025 · Version 1.1
           </p>
           <p className="text-white/45 font-body text-sm mt-2">
             Contact commercial :{' '}
