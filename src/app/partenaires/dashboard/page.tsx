@@ -1,6 +1,12 @@
 // src/app/partenaires/dashboard/page.tsx — Dashboard partenaire NYME v3
-// ✅ Vrais prix (25k/65k/devis) | ✅ Abonnement mensuel wallet | ✅ Pas de commission UI
+// ✅ Vrais prix (45k/90k/devis) | ✅ Abonnement mensuel wallet | ✅ Pas de commission UI
 // ✅ Carte temps réel | ✅ Design app livraison production-grade
+// CORRECTIONS :
+//   [FIX-1] coursierPositionsMap déclaré au niveau module (strict TS)
+//   [FIX-2] Bug carte : deux .find() séparés pouvaient retourner des coursiers différents
+//   [FIX-3] Cleanup useEffect async — canaux et interval correctement nettoyés
+//   [FIX-4] contacts_favoris : adresse_habituelle sauvegardée dans la bonne colonne
+//   [FIX-5] Suppression import User inutilisé
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -40,14 +46,13 @@ interface CoursierActif {
   lng_actuelle: number | null
 }
 
-// ✅ FIX DÉFINITIF : Map déclaré au niveau MODULE (hors composant)
-// tsconfig strict=true interdit new Map() sans argument dans un composant React
-// car TypeScript ne peut pas inférer Map<string, CoursierPos> depuis new Map()
-// Solution : déclarer le type et l'instance au niveau module où l'inférence fonctionne
+// [FIX-1] Map déclaré au niveau MODULE — tsconfig strict=true interdit
+// new Map() sans generic dans un composant React (inférence impossible).
+// La Map module-level est typée explicitement et partagée via useRef.
 interface CoursierPos { lat: number; lng: number }
 const _coursierPositionsMap = new Map<string, CoursierPos>()
 
-// ── Config plans ──────────────────────────────────────────────────
+// ── Config plans ───────────────────────────────────────────────────
 
 const PLAN_CFG = {
   starter: {
@@ -107,6 +112,8 @@ const fXOF = (n: number) =>
 const fDate = (d: string) =>
   new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(d))
 
+// ── Badge statut ───────────────────────────────────────────────────
+
 function Badge({ statut }: { statut: string }) {
   const s = STATUT_CFG[statut] || STATUT_CFG.en_attente
   return (
@@ -116,6 +123,8 @@ function Badge({ statut }: { statut: string }) {
     </span>
   )
 }
+
+// ── Mini sparkline ─────────────────────────────────────────────────
 
 function MiniSparkline({ data, color = '#3b82f6' }: { data: number[]; color?: string }) {
   if (data.length < 2) return null
@@ -134,64 +143,65 @@ function MiniSparkline({ data, color = '#3b82f6' }: { data: number[]; color?: st
 export default function PartenaireDashboard() {
   const router = useRouter()
 
-  const [userId,       setUserId]       = useState<string | null>(null)
-  const [partenaire,   setPartenaire]   = useState<PartenaireRow | null>(null)
-  const [livraisons,   setLivraisons]   = useState<LivraisonPartenaireRow[]>([])
-  const [contacts,     setContacts]     = useState<Contact[]>([])
-  const [coursiers,    setCoursiers]    = useState<CoursierActif[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [refreshing,   setRefreshing]   = useState(false)
-  const [tab,          setTab]          = useState('dashboard')
-  const [recherche,    setRecherche]    = useState('')
-  const [filtreStatut, setFiltreStatut] = useState('tous')
-  const [detail,       setDetail]       = useState<LivraisonPartenaireRow | null>(null)
-  const [alertes,      setAlertes]      = useState<string[]>([])
-  const [soldeWallet,  setSoldeWallet]  = useState(0)
-  const [txWallet,     setTxWallet]     = useState<any[]>([])
+  const [userId,         setUserId]         = useState<string | null>(null)
+  const [partenaire,     setPartenaire]     = useState<PartenaireRow | null>(null)
+  const [livraisons,     setLivraisons]     = useState<LivraisonPartenaireRow[]>([])
+  const [contacts,       setContacts]       = useState<Contact[]>([])
+  const [coursiers,      setCoursiers]      = useState<CoursierActif[]>([])
+  const [loading,        setLoading]        = useState(true)
+  const [refreshing,     setRefreshing]     = useState(false)
+  const [tab,            setTab]            = useState('dashboard')
+  const [recherche,      setRecherche]      = useState('')
+  const [filtreStatut,   setFiltreStatut]   = useState('tous')
+  const [detail,         setDetail]         = useState<LivraisonPartenaireRow | null>(null)
+  const [alertes,        setAlertes]        = useState<string[]>([])
+  const [soldeWallet,    setSoldeWallet]    = useState(0)
+  const [txWallet,       setTxWallet]       = useState<any[]>([])
   const [coursierFavori, setCoursierFavori] = useState<CoursierActif | null>(null)
-
-  // ✅ FIX : useRef pointe vers l'instance module-level — aucun generic nécessaire
-  const coursierPositionsRef = useRef(_coursierPositionsMap)
-
   const [editingProfil,  setEditingProfil]  = useState(false)
   const [profilForm,     setProfilForm]     = useState({ entreprise: '', nom_contact: '', telephone: '', email_pro: '', adresse: '' })
   const [savingProfil,   setSavingProfil]   = useState(false)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
-
-  const [showForm,    setShowForm]    = useState(false)
-  const [formLivr,    setFormLivr]    = useState({
+  const [showForm,       setShowForm]       = useState(false)
+  const [formLivr,       setFormLivr]       = useState({
     adresse_depart: '', lat_depart: 0, lng_depart: 0,
     adresse_arrivee: '', lat_arrivee: 0, lng_arrivee: 0,
     destinataire_nom: '', destinataire_tel: '', destinataire_whatsapp: '',
     instructions: '', date_programmee: '', heure: '09:00', contact_id: '',
   })
-  const [submittingLivr, setSubmittingLivr] = useState(false)
-
+  const [submittingLivr,  setSubmittingLivr]  = useState(false)
   const [showContactForm, setShowContactForm] = useState(false)
   const [editContact,     setEditContact]     = useState<Contact | null>(null)
   const [contactForm,     setContactForm]     = useState({ nom: '', telephone: '', whatsapp: '', adresse_habituelle: '' })
   const [savingContact,   setSavingContact]   = useState(false)
 
+  // [FIX-1] useRef pointe vers l'instance module-level typée
+  const coursierPositionsRef = useRef(_coursierPositionsMap)
+
+  // ── Rafraîchissement positions coursiers (polling 5s) ──────────
+
   const refreshCoursierPositions = useCallback(async () => {
     try {
       const { data: posData } = await supabase
         .from('localisation_coursier')
-        .select('coursier_id, lat, lng, statut, vitesse, direction, updated_at')
+        .select('coursier_id, lat, lng, statut')
         .in('statut', ['disponible', 'occupe'])
+
       if (posData && posData.length > 0) {
         posData.forEach((p: { coursier_id: string; lat: number; lng: number }) => {
           coursierPositionsRef.current.set(p.coursier_id, { lat: p.lat, lng: p.lng })
         })
         setCoursiers(prev => prev.map(c => {
           const pos = coursierPositionsRef.current.get(c.id)
-          if (pos) return { ...c, lat_actuelle: pos.lat, lng_actuelle: pos.lng }
-          return c
+          return pos ? { ...c, lat_actuelle: pos.lat, lng_actuelle: pos.lng } : c
         }))
       }
     } catch (posErr) {
       console.debug('[dashboard partenaire] Positions refresh:', posErr)
     }
   }, [])
+
+  // ── Chargement données ─────────────────────────────────────────
 
   const loadData = useCallback(async (uid: string) => {
     try {
@@ -267,29 +277,41 @@ export default function PartenaireDashboard() {
     }
   }, [router])
 
+  // ── Initialisation + Realtime + Cleanup ────────────────────────
+
   useEffect(() => {
+    // [FIX-3] Les refs pour le cleanup sont déclarées en dehors de init()
+    // car init() est async et son return n'est pas utilisé par React.
+    let channelLivraisons: ReturnType<typeof supabase.channel> | null = null
+    let channelPositions:  ReturnType<typeof supabase.channel> | null = null
+    let pollingInterval:   ReturnType<typeof setInterval> | null = null
+    let authSub:           { unsubscribe: () => void } | null = null
+
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.replace('/partenaires/login'); return }
-      const { data: user } = await supabase.from('utilisateurs').select('role').eq('id', session.user.id).single()
+
+      const { data: user } = await supabase
+        .from('utilisateurs').select('role').eq('id', session.user.id).single()
       if (!user || user.role !== 'partenaire') {
         toast.error('Accès réservé aux partenaires')
         await supabase.auth.signOut()
         router.replace('/partenaires/login')
         return
       }
+
       setUserId(session.user.id)
       await loadData(session.user.id)
 
-      const channelLivraisons = supabase.channel('partenaire-rt-livraisons')
+      channelLivraisons = supabase.channel('partenaire-rt-livraisons')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'livraisons_partenaire' }, () => {
-          if (session.user.id) loadData(session.user.id)
+          loadData(session.user.id)
         }).subscribe()
 
-      const channelPositions = supabase.channel('partenaire-rt-positions')
+      channelPositions = supabase.channel('partenaire-rt-positions')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'localisation_coursier' }, (payload) => {
           const record = payload.new as { coursier_id?: string; lat?: number; lng?: number; statut?: string }
-          if (record?.coursier_id && record?.lat && record?.lng) {
+          if (record?.coursier_id && record?.lat != null && record?.lng != null) {
             coursierPositionsRef.current.set(record.coursier_id, { lat: record.lat, lng: record.lng })
             setCoursiers(prev => prev.map(c =>
               c.id === record.coursier_id
@@ -299,21 +321,27 @@ export default function PartenaireDashboard() {
           }
         }).subscribe()
 
-      const pollingInterval = setInterval(refreshCoursierPositions, 5000)
+      pollingInterval = setInterval(refreshCoursierPositions, 5000)
 
-      const { data: auth } = supabase.auth.onAuthStateChange(ev => {
+      const { data: authData } = supabase.auth.onAuthStateChange(ev => {
         if (ev === 'SIGNED_OUT') router.replace('/partenaires/login')
       })
-      return () => {
-        supabase.removeChannel(channelLivraisons)
-        supabase.removeChannel(channelPositions)
-        clearInterval(pollingInterval)
-        auth.subscription.unsubscribe()
-      }
+      authSub = authData.subscription
     }
+
     init()
+
+    // [FIX-3] Cleanup synchrone — React peut l'appeler correctement
+    return () => {
+      if (channelLivraisons) supabase.removeChannel(channelLivraisons)
+      if (channelPositions)  supabase.removeChannel(channelPositions)
+      if (pollingInterval)   clearInterval(pollingInterval)
+      if (authSub)           authSub.unsubscribe()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Créer livraison ────────────────────────────────────────────
 
   const handleCreateLivraison = async () => {
     if (!partenaire) return
@@ -341,7 +369,12 @@ export default function PartenaireDashboard() {
       if (error) throw error
       toast.success('✅ Livraison créée ! Votre livreur dédié est en route.')
       setShowForm(false)
-      setFormLivr({ adresse_depart: '', lat_depart: 0, lng_depart: 0, adresse_arrivee: '', lat_arrivee: 0, lng_arrivee: 0, destinataire_nom: '', destinataire_tel: '', destinataire_whatsapp: '', instructions: '', date_programmee: '', heure: '09:00', contact_id: '' })
+      setFormLivr({
+        adresse_depart: '', lat_depart: 0, lng_depart: 0,
+        adresse_arrivee: '', lat_arrivee: 0, lng_arrivee: 0,
+        destinataire_nom: '', destinataire_tel: '', destinataire_whatsapp: '',
+        instructions: '', date_programmee: '', heure: '09:00', contact_id: '',
+      })
       if (userId) loadData(userId)
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors de la création')
@@ -351,13 +384,15 @@ export default function PartenaireDashboard() {
   const selectContact = (contact: Contact) => {
     setFormLivr(p => ({
       ...p,
-      destinataire_nom:       contact.nom,
-      destinataire_tel:       contact.telephone,
-      destinataire_whatsapp:  contact.whatsapp || '',
-      adresse_arrivee:        contact.adresse_habituelle || p.adresse_arrivee,
+      destinataire_nom:      contact.nom,
+      destinataire_tel:      contact.telephone,
+      destinataire_whatsapp: contact.whatsapp || '',
+      adresse_arrivee:       contact.adresse_habituelle || p.adresse_arrivee,
     }))
     toast.success(`👤 ${contact.nom} sélectionné`)
   }
+
+  // ── Contacts ───────────────────────────────────────────────────
 
   const handleSaveContact = async () => {
     if (!userId) return
@@ -365,26 +400,28 @@ export default function PartenaireDashboard() {
     setSavingContact(true)
     try {
       if (editContact) {
+        // [FIX-4] adresse_habituelle dans la bonne colonne (pas email)
         const { error } = await supabase.from('contacts_favoris').update({
-          nom:       contactForm.nom,
-          telephone: contactForm.telephone,
-          whatsapp:  contactForm.whatsapp || null,
-          email:     contactForm.adresse_habituelle || null,
+          nom:               contactForm.nom,
+          telephone:         contactForm.telephone,
+          whatsapp:          contactForm.whatsapp || null,
+          adresse_habituelle: contactForm.adresse_habituelle || null,
         }).eq('id', editContact.id)
         if (error) throw error
         toast.success('Contact modifié')
       } else {
         const { error } = await supabase.from('contacts_favoris').insert({
-          user_id:   userId,
-          nom:       contactForm.nom,
-          telephone: contactForm.telephone,
-          whatsapp:  contactForm.whatsapp || null,
-          email:     contactForm.adresse_habituelle || null,
+          user_id:            userId,
+          nom:                contactForm.nom,
+          telephone:          contactForm.telephone,
+          whatsapp:           contactForm.whatsapp || null,
+          adresse_habituelle: contactForm.adresse_habituelle || null,
         })
         if (error) throw error
         toast.success('Contact ajouté')
       }
-      setShowContactForm(false); setEditContact(null)
+      setShowContactForm(false)
+      setEditContact(null)
       setContactForm({ nom: '', telephone: '', whatsapp: '', adresse_habituelle: '' })
       if (userId) loadData(userId)
     } catch (err: any) { toast.error(err.message || 'Erreur') }
@@ -397,6 +434,8 @@ export default function PartenaireDashboard() {
     setContacts(p => p.filter(c => c.id !== id))
     toast.success('Contact supprimé')
   }
+
+  // ── Paiement abonnement ────────────────────────────────────────
 
   const handlePaiementAbonnement = async () => {
     if (!partenaire || !userId) return
@@ -419,6 +458,8 @@ export default function PartenaireDashboard() {
     } catch { toast.error('Erreur paiement — réessayez ou contactez NYME') }
   }
 
+  // ── Profil ─────────────────────────────────────────────────────
+
   const handleSaveProfil = async () => {
     if (!partenaire) return
     setSavingProfil(true)
@@ -438,14 +479,20 @@ export default function PartenaireDashboard() {
     finally { setSavingProfil(false) }
   }
 
+  // ── Export CSV ─────────────────────────────────────────────────
+
   const exportCSV = () => {
     const rows = [
       ['ID', 'Date', 'Départ', 'Arrivée', 'Destinataire', 'Téléphone', 'Statut', 'Prix (FCFA)'],
       ...livraisons.map(l => [
-        l.id.slice(0, 8), new Date(l.created_at).toLocaleDateString('fr-FR'),
-        l.adresse_depart, l.adresse_arrivee,
-        l.destinataire_nom || '', l.destinataire_tel || '',
-        STATUT_CFG[l.statut]?.label || l.statut, l.prix || 0,
+        l.id.slice(0, 8),
+        new Date(l.created_at).toLocaleDateString('fr-FR'),
+        l.adresse_depart,
+        l.adresse_arrivee,
+        l.destinataire_nom || '',
+        l.destinataire_tel || '',
+        STATUT_CFG[l.statut]?.label || l.statut,
+        l.prix || 0,
       ])
     ].map(r => r.join(';')).join('\n')
     const a = document.createElement('a')
@@ -454,13 +501,17 @@ export default function PartenaireDashboard() {
     a.click()
   }
 
+  // ── Stats ──────────────────────────────────────────────────────
+
   const stats = {
     total:     livraisons.length,
     livrees:   livraisons.filter(l => l.statut === 'livre').length,
     enCours:   livraisons.filter(l => l.statut === 'en_cours').length,
     enAttente: livraisons.filter(l => l.statut === 'en_attente').length,
     depenses:  livraisons.filter(l => l.statut === 'livre').reduce((s, l) => s + (l.prix || 0), 0),
-    txSucces:  livraisons.length > 0 ? Math.round(livraisons.filter(l => l.statut === 'livre').length / livraisons.length * 100) : 0,
+    txSucces:  livraisons.length > 0
+      ? Math.round(livraisons.filter(l => l.statut === 'livre').length / livraisons.length * 100)
+      : 0,
   }
 
   const spark7 = Array.from({ length: 7 }, (_, i) => {
@@ -483,8 +534,14 @@ export default function PartenaireDashboard() {
     return matchStatut && matchRech
   })
 
+  // [FIX-2] Un seul .find() pour éviter que lat et lng viennent
+  // de deux coursiers différents quand plusieurs ont une position
+  const coursierAvecPosition = coursiers.find(c => c.lat_actuelle != null && c.lng_actuelle != null)
+
   const inp = 'w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all bg-white placeholder-gray-400'
   const plan = partenaire ? PLAN_CFG[partenaire.plan as keyof typeof PLAN_CFG] : null
+
+  // ── Loading ────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -508,6 +565,7 @@ export default function PartenaireDashboard() {
       {/* ── HEADER ── */}
       <nav className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+
           <Link href="/" className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-sm shadow-orange-200">
               <Zap size={15} className="text-white" strokeWidth={2.5} />
@@ -518,16 +576,21 @@ export default function PartenaireDashboard() {
 
           <div className="flex items-center gap-1.5">
             {alertes.length > 0 && (
-              <button onClick={() => setShowNotifPanel(!showNotifPanel)}
-                className="relative p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors">
+              <button
+                onClick={() => setShowNotifPanel(!showNotifPanel)}
+                className="relative p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+              >
                 <Bell size={16} />
                 <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center font-black">
                   {alertes.length}
                 </span>
               </button>
             )}
-            <button onClick={() => { if (userId) { setRefreshing(true); loadData(userId) } }} disabled={refreshing}
-              className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
+            <button
+              onClick={() => { if (userId) { setRefreshing(true); loadData(userId) } }}
+              disabled={refreshing}
+              className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+            >
               <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
             </button>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100">
@@ -543,13 +606,16 @@ export default function PartenaireDashboard() {
                 </span>
               )}
             </div>
-            <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/partenaires/login' }}
-              className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+            <button
+              onClick={async () => { await supabase.auth.signOut(); window.location.href = '/partenaires/login' }}
+              className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            >
               <LogOut size={15} />
             </button>
           </div>
         </div>
 
+        {/* Panel alertes */}
         {showNotifPanel && alertes.length > 0 && (
           <div className="absolute top-14 right-4 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
             {alertes.map((a, i) => (
@@ -561,10 +627,18 @@ export default function PartenaireDashboard() {
           </div>
         )}
 
+        {/* TABS */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-0 border-t border-gray-50 scrollbar-hide">
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t.id ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-200'}`}>
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                tab === t.id
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-200'
+              }`}
+            >
               <t.icon size={12} />{t.label}
               {t.id === 'livraisons' && stats.enCours > 0 && (
                 <span className="w-4 h-4 bg-orange-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
@@ -578,8 +652,15 @@ export default function PartenaireDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4">
 
+        {/* Alertes inline */}
         {alertes.map((a, i) => (
-          <div key={i} className={`p-3.5 rounded-2xl border flex items-center gap-3 text-sm ${a.includes('suspendu') ? 'bg-red-50 border-red-200 text-red-700' : a.includes('validation') ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+          <div key={i} className={`p-3.5 rounded-2xl border flex items-center gap-3 text-sm ${
+            a.includes('suspendu')
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : a.includes('validation')
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'bg-amber-50 border-amber-200 text-amber-700'
+          }`}>
             <AlertCircle size={15} className="shrink-0" />
             <span className="flex-1 font-medium text-xs">{a}</span>
             {a.includes('Quota') && (
@@ -591,6 +672,7 @@ export default function PartenaireDashboard() {
         {/* ════════════ DASHBOARD ════════════ */}
         {tab === 'dashboard' && (
           <div className="space-y-4">
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h1 className="text-xl font-black text-gray-900">
@@ -603,23 +685,32 @@ export default function PartenaireDashboard() {
                       {plan.emoji} {plan.label}
                     </span>
                   )}
-                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold border ${partenaire?.statut === 'actif' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold border ${
+                    partenaire?.statut === 'actif'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-gray-100 text-gray-500 border-gray-200'
+                  }`}>
                     {partenaire?.statut === 'actif' ? '● Actif' : '⏳ En attente'}
                   </span>
                 </div>
               </div>
-              <button onClick={() => { setTab('planifier'); setShowForm(true) }}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl shadow-sm shadow-orange-200 transition-all whitespace-nowrap">
+              <button
+                onClick={() => { setTab('planifier'); setShowForm(true) }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl shadow-sm shadow-orange-200 transition-all whitespace-nowrap"
+              >
                 <Plus size={14} />Nouvelle livraison
               </button>
             </div>
 
+            {/* Quota barre */}
             {partenaire && plan && (
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="font-bold text-gray-900 text-sm">Quota mensuel</p>
-                    <p className="text-gray-400 text-xs mt-0.5">{partenaire.livraisons_max - partenaire.livraisons_mois} livraisons restantes</p>
+                    <p className="text-gray-400 text-xs mt-0.5">
+                      {partenaire.livraisons_max - partenaire.livraisons_mois} livraisons restantes
+                    </p>
                   </div>
                   <div className="text-right">
                     <span className="text-2xl font-black text-gray-900">{partenaire.livraisons_mois}</span>
@@ -627,23 +718,34 @@ export default function PartenaireDashboard() {
                   </div>
                 </div>
                 <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-700 ${progression >= 100 ? 'bg-red-500' : progression >= 80 ? 'bg-amber-400' : 'bg-gradient-to-r from-orange-400 to-orange-500'}`}
-                    style={{ width: `${progression}%` }} />
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      progression >= 100
+                        ? 'bg-red-500'
+                        : progression >= 80
+                          ? 'bg-amber-400'
+                          : 'bg-gradient-to-r from-orange-400 to-orange-500'
+                    }`}
+                    style={{ width: `${progression}%` }}
+                  />
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-gray-300 text-xs">0</span>
-                  <span className={`text-xs font-bold ${progression >= 80 ? 'text-amber-600' : 'text-gray-400'}`}>{progression}%</span>
+                  <span className={`text-xs font-bold ${progression >= 80 ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {progression}%
+                  </span>
                   <span className="text-gray-300 text-xs">{partenaire.livraisons_max}</span>
                 </div>
               </div>
             )}
 
+            {/* Stats cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
-                { icon: Package,     label: 'Total',        value: stats.total,     sub: '7 jours',                       color: 'bg-blue-500',   spark: spark7, sparkColor: '#3b82f6' },
-                { icon: CheckCircle, label: 'Livrées',      value: stats.livrees,   sub: `${stats.txSucces}% succès`,     color: 'bg-green-500',  spark: null,   sparkColor: '#22c55e' },
-                { icon: Bike,        label: 'En livraison', value: stats.enCours,   sub: 'maintenant',                    color: stats.enCours > 0 ? 'bg-orange-500' : 'bg-gray-400', spark: null, sparkColor: '#f97316' },
-                { icon: Clock,       label: 'En attente',   value: stats.enAttente, sub: 'à traiter',                     color: 'bg-violet-500', spark: null,   sparkColor: '#8b5cf6' },
+                { icon: Package,     label: 'Total',        value: stats.total,     sub: '7 jours',                   color: 'bg-blue-500',   spark: spark7, sparkColor: '#3b82f6' },
+                { icon: CheckCircle, label: 'Livrées',      value: stats.livrees,   sub: `${stats.txSucces}% succès`, color: 'bg-green-500',  spark: null,   sparkColor: '#22c55e' },
+                { icon: Bike,        label: 'En livraison', value: stats.enCours,   sub: 'maintenant',                color: stats.enCours > 0 ? 'bg-orange-500' : 'bg-gray-400', spark: null, sparkColor: '#f97316' },
+                { icon: Clock,       label: 'En attente',   value: stats.enAttente, sub: 'à traiter',                 color: 'bg-violet-500', spark: null,   sparkColor: '#8b5cf6' },
               ].map(s => (
                 <div key={s.label} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col gap-3">
                   <div className="flex items-start justify-between">
@@ -661,21 +763,30 @@ export default function PartenaireDashboard() {
               ))}
             </div>
 
+            {/* Livraisons EN COURS */}
             {stats.enCours > 0 && (
               <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-4 text-white">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                    <p className="font-black text-sm">{stats.enCours} livraison{stats.enCours > 1 ? 's' : ''} en cours</p>
+                    <p className="font-black text-sm">
+                      {stats.enCours} livraison{stats.enCours > 1 ? 's' : ''} en cours
+                    </p>
                   </div>
-                  <button onClick={() => setTab('carte')} className="text-xs text-white/80 font-semibold flex items-center gap-1 hover:text-white">
+                  <button
+                    onClick={() => setTab('carte')}
+                    className="text-xs text-white/80 font-semibold flex items-center gap-1 hover:text-white"
+                  >
                     <Navigation size={11} />Voir carte
                   </button>
                 </div>
                 <div className="space-y-2">
                   {livraisons.filter(l => l.statut === 'en_cours').slice(0, 2).map(l => (
-                    <div key={l.id} onClick={() => setDetail(l)}
-                      className="bg-white/15 rounded-xl p-3 flex items-center gap-3 cursor-pointer hover:bg-white/25 transition-colors">
+                    <div
+                      key={l.id}
+                      onClick={() => setDetail(l)}
+                      className="bg-white/15 rounded-xl p-3 flex items-center gap-3 cursor-pointer hover:bg-white/25 transition-colors"
+                    >
                       <Bike size={14} className="text-white/80 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-xs font-semibold truncate">{l.adresse_arrivee}</p>
@@ -688,6 +799,7 @@ export default function PartenaireDashboard() {
               </div>
             )}
 
+            {/* Coursier du mois */}
             {coursierFavori && (
               <div className="bg-white rounded-2xl p-4 border border-gray-100 flex items-center gap-4">
                 <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-sm">
@@ -705,17 +817,25 @@ export default function PartenaireDashboard() {
                     {coursierFavori.note_moyenne ? ` · ⭐ ${coursierFavori.note_moyenne.toFixed(1)}/5` : ''}
                   </p>
                 </div>
-                <div className={`text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1 ${coursierFavori.statut === 'disponible' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                <div className={`text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1 ${
+                  coursierFavori.statut === 'disponible'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-orange-100 text-orange-700'
+                }`}>
                   <Circle size={6} fill="currentColor" />
                   {coursierFavori.statut === 'disponible' ? 'Disponible' : 'En course'}
                 </div>
               </div>
             )}
 
+            {/* Livraisons récentes */}
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-50 flex items-center justify-between">
                 <h2 className="font-black text-gray-900 text-sm">Livraisons récentes</h2>
-                <button onClick={() => setTab('livraisons')} className="text-orange-600 text-xs font-bold hover:underline flex items-center gap-1">
+                <button
+                  onClick={() => setTab('livraisons')}
+                  className="text-orange-600 text-xs font-bold hover:underline flex items-center gap-1"
+                >
                   Tout voir <ArrowUpRight size={11} />
                 </button>
               </div>
@@ -725,17 +845,24 @@ export default function PartenaireDashboard() {
                     <Package size={24} className="text-gray-200" />
                   </div>
                   <p className="text-gray-500 text-sm mb-4">Aucune livraison pour l&apos;instant.</p>
-                  <button onClick={() => { setTab('planifier'); setShowForm(true) }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600">
+                  <button
+                    onClick={() => { setTab('planifier'); setShowForm(true) }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600"
+                  >
                     <Plus size={13} />Créer ma première livraison
                   </button>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-50">
                   {livraisons.slice(0, 6).map(l => (
-                    <div key={l.id} onClick={() => setDetail(l)}
-                      className="p-4 flex items-start gap-3 hover:bg-gray-50 cursor-pointer transition-colors">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-sm ${l.statut === 'en_cours' ? 'bg-orange-100' : l.statut === 'livre' ? 'bg-green-100' : 'bg-gray-100'}`}>
+                    <div
+                      key={l.id}
+                      onClick={() => setDetail(l)}
+                      className="p-4 flex items-start gap-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-sm ${
+                        l.statut === 'en_cours' ? 'bg-orange-100' : l.statut === 'livre' ? 'bg-green-100' : 'bg-gray-100'
+                      }`}>
                         {STATUT_CFG[l.statut]?.icon || '📦'}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -767,26 +894,41 @@ export default function PartenaireDashboard() {
               <h2 className="text-lg font-black text-gray-900">
                 Livraisons <span className="text-gray-300 font-normal text-sm">({livraisons.length})</span>
               </h2>
-              <button onClick={() => { setTab('planifier'); setShowForm(true) }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600">
+              <button
+                onClick={() => { setTab('planifier'); setShowForm(true) }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600"
+              >
                 <Plus size={13} />Nouvelle
               </button>
             </div>
+
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input placeholder="Adresse, destinataire, téléphone…" value={recherche}
-                  onChange={e => setRecherche(e.target.value)} className={`${inp} pl-10`} />
+                <input
+                  placeholder="Adresse, destinataire, téléphone…"
+                  value={recherche}
+                  onChange={e => setRecherche(e.target.value)}
+                  className={`${inp} pl-10`}
+                />
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {['tous', 'en_attente', 'en_cours', 'livre', 'annule'].map(s => (
-                  <button key={s} onClick={() => setFiltreStatut(s)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${filtreStatut === s ? 'bg-orange-500 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  <button
+                    key={s}
+                    onClick={() => setFiltreStatut(s)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                      filtreStatut === s
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
                     {s === 'tous' ? 'Tous' : STATUT_CFG[s]?.label || s}
                   </button>
                 ))}
               </div>
             </div>
+
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               {livraisonsFiltrees.length === 0 ? (
                 <div className="p-12 text-center">
@@ -796,9 +938,14 @@ export default function PartenaireDashboard() {
               ) : (
                 <div className="divide-y divide-gray-50">
                   {livraisonsFiltrees.map(l => (
-                    <div key={l.id} onClick={() => setDetail(l)}
-                      className="p-4 sm:p-5 flex items-start gap-3 hover:bg-gray-50 cursor-pointer transition-colors">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${l.statut === 'en_cours' ? 'bg-orange-50' : l.statut === 'livre' ? 'bg-green-50' : 'bg-gray-50'}`}>
+                    <div
+                      key={l.id}
+                      onClick={() => setDetail(l)}
+                      className="p-4 sm:p-5 flex items-start gap-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${
+                        l.statut === 'en_cours' ? 'bg-orange-50' : l.statut === 'livre' ? 'bg-green-50' : 'bg-gray-50'
+                      }`}>
                         {STATUT_CFG[l.statut]?.icon || '📦'}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -813,8 +960,11 @@ export default function PartenaireDashboard() {
                           <span>{fDate(l.created_at)}</span>
                           {l.destinataire_nom && <span>· 👤 {l.destinataire_nom}</span>}
                           {l.destinataire_tel && (
-                            <a href={`tel:${l.destinataire_tel}`} onClick={e => e.stopPropagation()}
-                              className="flex items-center gap-1 text-blue-500 hover:underline">
+                            <a
+                              href={`tel:${l.destinataire_tel}`}
+                              onClick={e => e.stopPropagation()}
+                              className="flex items-center gap-1 text-blue-500 hover:underline"
+                            >
                               <Phone size={9} />{l.destinataire_tel}
                             </a>
                           )}
@@ -826,8 +976,11 @@ export default function PartenaireDashboard() {
                 </div>
               )}
             </div>
-            <button onClick={exportCSV}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+            >
               <FileText size={13} />Exporter CSV
             </button>
           </div>
@@ -838,8 +991,10 @@ export default function PartenaireDashboard() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-gray-900">Planifier une livraison</h2>
-              <button onClick={() => setShowForm(!showForm)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600">
+              <button
+                onClick={() => setShowForm(!showForm)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600"
+              >
                 <Plus size={13} />Créer
               </button>
             </div>
@@ -855,80 +1010,126 @@ export default function PartenaireDashboard() {
                     <p className="text-gray-400 text-xs">Votre livreur dédié sera notifié immédiatement</p>
                   </div>
                 </div>
+
                 {contacts.length > 0 && (
                   <div>
                     <p className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">Contact rapide</p>
                     <div className="flex flex-wrap gap-2">
                       {contacts.slice(0, 8).map(c => (
-                        <button key={c.id} onClick={() => selectContact(c)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${formLivr.destinataire_nom === c.nom ? 'bg-orange-500 text-white border-orange-500' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}>
+                        <button
+                          key={c.id}
+                          onClick={() => selectContact(c)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                            formLivr.destinataire_nom === c.nom
+                              ? 'bg-orange-500 text-white border-orange-500'
+                              : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'
+                          }`}
+                        >
                           {c.nom.split(' ')[0]}
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
+
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">📍 Adresse de départ *</label>
-                    <input type="text" placeholder="Ex: Avenue Kwame Nkrumah, Ouagadougou"
+                    <input
+                      type="text"
+                      placeholder="Ex: Avenue Kwame Nkrumah, Ouagadougou"
                       value={formLivr.adresse_depart}
-                      onChange={e => setFormLivr(p => ({ ...p, adresse_depart: e.target.value }))} className={inp} />
+                      onChange={e => setFormLivr(p => ({ ...p, adresse_depart: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">🏁 Adresse de destination *</label>
-                    <input type="text" placeholder="Ex: Secteur 15, rue des Fleurs"
+                    <input
+                      type="text"
+                      placeholder="Ex: Secteur 15, rue des Fleurs"
                       value={formLivr.adresse_arrivee}
-                      onChange={e => setFormLivr(p => ({ ...p, adresse_arrivee: e.target.value }))} className={inp} />
+                      onChange={e => setFormLivr(p => ({ ...p, adresse_arrivee: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">👤 Nom destinataire *</label>
-                    <input type="text" placeholder="Prénom Nom" value={formLivr.destinataire_nom}
-                      onChange={e => setFormLivr(p => ({ ...p, destinataire_nom: e.target.value }))} className={inp} />
+                    <input
+                      type="text"
+                      placeholder="Prénom Nom"
+                      value={formLivr.destinataire_nom}
+                      onChange={e => setFormLivr(p => ({ ...p, destinataire_nom: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">📞 Téléphone *</label>
-                    <input type="tel" placeholder="+226 XX XX XX XX" value={formLivr.destinataire_tel}
-                      onChange={e => setFormLivr(p => ({ ...p, destinataire_tel: e.target.value }))} className={inp} />
+                    <input
+                      type="tel"
+                      placeholder="+226 XX XX XX XX"
+                      value={formLivr.destinataire_tel}
+                      onChange={e => setFormLivr(p => ({ ...p, destinataire_tel: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">💬 WhatsApp</label>
-                    <input type="tel" placeholder="+226 XX XX XX XX" value={formLivr.destinataire_whatsapp}
-                      onChange={e => setFormLivr(p => ({ ...p, destinataire_whatsapp: e.target.value }))} className={inp} />
+                    <input
+                      type="tel"
+                      placeholder="+226 XX XX XX XX"
+                      value={formLivr.destinataire_whatsapp}
+                      onChange={e => setFormLivr(p => ({ ...p, destinataire_whatsapp: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">📅 Date programmée</label>
-                    <input type="date" value={formLivr.date_programmee}
+                    <input
+                      type="date"
+                      value={formLivr.date_programmee}
                       min={new Date().toISOString().split('T')[0]}
-                      onChange={e => setFormLivr(p => ({ ...p, date_programmee: e.target.value }))} className={inp} />
+                      onChange={e => setFormLivr(p => ({ ...p, date_programmee: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-1.5">📝 Instructions spéciales</label>
-                    <textarea placeholder="Fragile, appeler avant livraison, code portail…"
+                    <textarea
+                      placeholder="Fragile, appeler avant livraison, code portail…"
                       value={formLivr.instructions}
                       onChange={e => setFormLivr(p => ({ ...p, instructions: e.target.value }))}
-                      className={`${inp} resize-none h-20`} />
+                      className={`${inp} resize-none h-20`}
+                    />
                   </div>
                 </div>
+
                 <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 flex items-start gap-2">
                   <span className="text-base shrink-0">💡</span>
                   <p className="text-orange-700 text-xs leading-relaxed">
-                    Inclus dans votre abonnement <strong>{plan?.label}</strong>. Votre livreur dédié sera notifié sous <strong>{plan?.delai}</strong>.
+                    Inclus dans votre abonnement <strong>{plan?.label}</strong>. Votre livreur dédié sera notifié et prendra en charge cette livraison sous <strong>{plan?.delai}</strong>.
                   </p>
                 </div>
+
                 <div className="flex gap-3">
-                  <button onClick={() => setShowForm(false)}
-                    className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700 hover:bg-gray-50 transition-colors text-sm">
+                  <button
+                    onClick={() => setShowForm(false)}
+                    className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700 hover:bg-gray-50 transition-colors text-sm"
+                  >
                     Annuler
                   </button>
-                  <button onClick={handleCreateLivraison} disabled={submittingLivr}
-                    className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50 transition-all shadow-sm">
+                  <button
+                    onClick={handleCreateLivraison}
+                    disabled={submittingLivr}
+                    className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50 transition-all shadow-sm"
+                  >
                     {submittingLivr ? '⏳ Création…' : '🚀 Créer la livraison'}
                   </button>
                 </div>
               </div>
             )}
 
+            {/* Planning calendrier */}
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-50">
                 <h3 className="font-black text-gray-900 text-sm">Planning — 30 prochains jours</h3>
@@ -945,8 +1146,13 @@ export default function PartenaireDashboard() {
                     const ds = d.toISOString().split('T')[0]
                     const nb = livraisons.filter(l => l.created_at.startsWith(ds)).length
                     return (
-                      <div key={i} title={`${d.toLocaleDateString('fr-FR')} — ${nb} livraison(s)`}
-                        className={`aspect-square rounded-xl flex flex-col items-center justify-center text-xs font-bold relative ${i === 0 ? 'ring-2 ring-orange-400 ring-offset-1' : ''} ${nb > 0 ? 'bg-orange-500 text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>
+                      <div
+                        key={i}
+                        title={`${d.toLocaleDateString('fr-FR')} — ${nb} livraison(s)`}
+                        className={`aspect-square rounded-xl flex flex-col items-center justify-center text-xs font-bold relative ${
+                          i === 0 ? 'ring-2 ring-orange-400 ring-offset-1' : ''
+                        } ${nb > 0 ? 'bg-orange-500 text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                      >
                         {d.getDate()}
                         {nb > 0 && <span className="text-[8px] font-black opacity-80">{nb}</span>}
                       </div>
@@ -965,47 +1171,74 @@ export default function PartenaireDashboard() {
               <h2 className="text-lg font-black text-gray-900">
                 Contacts <span className="text-gray-300 font-normal text-sm">({contacts.length})</span>
               </h2>
-              <button onClick={() => { setEditContact(null); setContactForm({ nom: '', telephone: '', whatsapp: '', adresse_habituelle: '' }); setShowContactForm(true) }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600">
+              <button
+                onClick={() => {
+                  setEditContact(null)
+                  setContactForm({ nom: '', telephone: '', whatsapp: '', adresse_habituelle: '' })
+                  setShowContactForm(true)
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600"
+              >
                 <UserPlus size={13} />Ajouter
               </button>
             </div>
             <p className="text-gray-400 text-sm">Vos clients fréquents pour des livraisons en 2 clics.</p>
+
             {showContactForm && (
               <div className="bg-white rounded-2xl p-6 border-2 border-orange-200 shadow-sm space-y-4">
                 <h3 className="font-black text-gray-900">{editContact ? 'Modifier le contact' : 'Nouveau contact'}</h3>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-black text-gray-400 uppercase tracking-wider mb-1.5">Nom *</label>
-                    <input type="text" placeholder="Prénom Nom" value={contactForm.nom}
-                      onChange={e => setContactForm(p => ({ ...p, nom: e.target.value }))} className={inp} />
+                    <input
+                      type="text" placeholder="Prénom Nom" value={contactForm.nom}
+                      onChange={e => setContactForm(p => ({ ...p, nom: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-400 uppercase tracking-wider mb-1.5">Téléphone *</label>
-                    <input type="tel" placeholder="+226 XX XX XX XX" value={contactForm.telephone}
-                      onChange={e => setContactForm(p => ({ ...p, telephone: e.target.value }))} className={inp} />
+                    <input
+                      type="tel" placeholder="+226 XX XX XX XX" value={contactForm.telephone}
+                      onChange={e => setContactForm(p => ({ ...p, telephone: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-400 uppercase tracking-wider mb-1.5">WhatsApp</label>
-                    <input type="tel" placeholder="+226 XX XX XX XX" value={contactForm.whatsapp}
-                      onChange={e => setContactForm(p => ({ ...p, whatsapp: e.target.value }))} className={inp} />
+                    <input
+                      type="tel" placeholder="+226 XX XX XX XX" value={contactForm.whatsapp}
+                      onChange={e => setContactForm(p => ({ ...p, whatsapp: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-black text-gray-400 uppercase tracking-wider mb-1.5">Adresse habituelle</label>
-                    <input type="text" placeholder="Ex: Secteur 15…" value={contactForm.adresse_habituelle}
-                      onChange={e => setContactForm(p => ({ ...p, adresse_habituelle: e.target.value }))} className={inp} />
+                    <input
+                      type="text" placeholder="Ex: Secteur 15…" value={contactForm.adresse_habituelle}
+                      onChange={e => setContactForm(p => ({ ...p, adresse_habituelle: e.target.value }))}
+                      className={inp}
+                    />
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => { setShowContactForm(false); setEditContact(null) }}
-                    className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 font-bold text-gray-700 text-sm">Annuler</button>
-                  <button onClick={handleSaveContact} disabled={savingContact}
-                    className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50">
+                  <button
+                    onClick={() => { setShowContactForm(false); setEditContact(null) }}
+                    className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 font-bold text-gray-700 text-sm"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleSaveContact}
+                    disabled={savingContact}
+                    className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50"
+                  >
                     {savingContact ? '…' : editContact ? '💾 Modifier' : '✅ Ajouter'}
                   </button>
                 </div>
               </div>
             )}
+
             {contacts.length === 0 ? (
               <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 shadow-sm">
                 <BookOpen size={32} className="text-gray-200 mx-auto mb-3" />
@@ -1032,16 +1265,27 @@ export default function PartenaireDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-1.5 shrink-0">
-                      <button onClick={() => { setTab('planifier'); setShowForm(true); selectContact(c) }}
-                        className="p-2 bg-orange-50 rounded-lg text-orange-600 hover:bg-orange-100 transition-colors" title="Créer livraison">
+                      <button
+                        onClick={() => { setTab('planifier'); setShowForm(true); selectContact(c) }}
+                        className="p-2 bg-orange-50 rounded-lg text-orange-600 hover:bg-orange-100 transition-colors"
+                        title="Créer livraison"
+                      >
                         <Package size={12} />
                       </button>
-                      <button onClick={() => { setEditContact(c); setContactForm({ nom: c.nom, telephone: c.telephone, whatsapp: c.whatsapp || '', adresse_habituelle: c.adresse_habituelle || '' }); setShowContactForm(true) }}
-                        className="p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200 transition-colors">
+                      <button
+                        onClick={() => {
+                          setEditContact(c)
+                          setContactForm({ nom: c.nom, telephone: c.telephone, whatsapp: c.whatsapp || '', adresse_habituelle: c.adresse_habituelle || '' })
+                          setShowContactForm(true)
+                        }}
+                        className="p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
+                      >
                         <Edit2 size={12} />
                       </button>
-                      <button onClick={() => handleDeleteContact(c.id)}
-                        className="p-2 bg-red-50 rounded-lg text-red-500 hover:bg-red-100 transition-colors">
+                      <button
+                        onClick={() => handleDeleteContact(c.id)}
+                        className="p-2 bg-red-50 rounded-lg text-red-500 hover:bg-red-100 transition-colors"
+                      >
                         <Trash2 size={12} />
                       </button>
                     </div>
@@ -1062,6 +1306,7 @@ export default function PartenaireDashboard() {
                 <span className="text-xs text-gray-500 font-medium">Live</span>
               </div>
             </div>
+
             <div className="bg-white rounded-2xl p-3 border border-gray-100 flex flex-wrap gap-4 text-xs">
               <span className="flex items-center gap-2 font-semibold text-gray-600">
                 <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
@@ -1076,15 +1321,22 @@ export default function PartenaireDashboard() {
                 Vos livraisons en cours ({stats.enCours})
               </span>
             </div>
+
             <div className="h-[420px] rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+              {/* [FIX-2] Un seul .find() — lat et lng garantis du même coursier */}
               <MapAdvanced
-                coursier={coursiers.find(c => c.lat_actuelle && c.lng_actuelle) ? {
-                  lat: coursiers.find(c => c.lat_actuelle)!.lat_actuelle!,
-                  lng: coursiers.find(c => c.lng_actuelle)!.lng_actuelle!,
-                  nom: 'Coursiers actifs',
-                } : undefined}
+                coursier={
+                  coursierAvecPosition
+                    ? {
+                        lat: coursierAvecPosition.lat_actuelle!,
+                        lng: coursierAvecPosition.lng_actuelle!,
+                        nom: coursierAvecPosition.nom,
+                      }
+                    : undefined
+                }
               />
             </div>
+
             {coursiers.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
                 <div className="p-4 border-b border-gray-50">
@@ -1092,7 +1344,9 @@ export default function PartenaireDashboard() {
                 </div>
                 {coursiers.map(c => (
                   <div key={c.id} className="p-4 flex items-center gap-3 border-b border-gray-50 last:border-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${c.statut === 'disponible' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${
+                      c.statut === 'disponible' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
                       {c.nom.charAt(0)}
                     </div>
                     <div className="flex-1">
@@ -1101,7 +1355,9 @@ export default function PartenaireDashboard() {
                         {c.note_moyenne ? `⭐ ${c.note_moyenne.toFixed(1)} · ` : ''}{c.total_courses} courses
                       </p>
                     </div>
-                    <div className={`text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 ${c.statut === 'disponible' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                    <div className={`text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 ${
+                      c.statut === 'disponible' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
                       <Circle size={6} fill="currentColor" />
                       {c.statut === 'disponible' ? 'Disponible' : 'En livraison'}
                     </div>
@@ -1116,6 +1372,7 @@ export default function PartenaireDashboard() {
         {tab === 'wallet' && (
           <div className="space-y-4">
             <h2 className="text-lg font-black text-gray-900">Wallet & Abonnement</h2>
+
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
               <div className="absolute -right-8 -top-8 w-36 h-36 rounded-full bg-white/5" />
               <div className="absolute -right-3 -bottom-10 w-52 h-52 rounded-full bg-white/[0.03]" />
@@ -1168,29 +1425,42 @@ export default function PartenaireDashboard() {
                 </div>
                 {plan.prix > 0 ? (
                   <>
-                    <div className={`rounded-xl p-3 text-sm flex items-center gap-2 ${soldeWallet >= plan.prix ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                    <div className={`rounded-xl p-3 text-sm flex items-center gap-2 ${
+                      soldeWallet >= plan.prix ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                    }`}>
                       {soldeWallet >= plan.prix ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
                       {soldeWallet >= plan.prix
                         ? `Solde suffisant — il restera ${(soldeWallet - plan.prix).toLocaleString('fr-FR')} FCFA`
                         : `Solde insuffisant — rechargez ${(plan.prix - soldeWallet).toLocaleString('fr-FR')} FCFA`}
                     </div>
-                    <button onClick={handlePaiementAbonnement} disabled={soldeWallet < plan.prix}
-                      className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-40 transition-all shadow-sm">
-                      {soldeWallet >= plan.prix ? `💳 Payer ${plan.prix.toLocaleString('fr-FR')} FCFA` : 'Solde insuffisant'}
+                    <button
+                      onClick={handlePaiementAbonnement}
+                      disabled={soldeWallet < plan.prix}
+                      className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-40 transition-all shadow-sm"
+                    >
+                      {soldeWallet >= plan.prix
+                        ? `💳 Payer ${plan.prix.toLocaleString('fr-FR')} FCFA`
+                        : 'Solde insuffisant'}
                     </button>
                   </>
                 ) : (
-                  <a href="mailto:nyme.contact@gmail.com?subject=Renouvellement plan Enterprise"
-                    className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black text-sm transition-all text-center block">
+                  <a
+                    href="mailto:nyme.contact@gmail.com?subject=Renouvellement plan Enterprise"
+                    className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black text-sm transition-all text-center block"
+                  >
                     📞 Contacter NYME pour le renouvellement
                   </a>
                 )}
                 <p className="text-gray-400 text-xs text-center">
-                  Pour recharger votre wallet : <a href="mailto:nyme.contact@gmail.com" className="text-orange-600 font-semibold">nyme.contact@gmail.com</a>
+                  Pour recharger votre wallet :{' '}
+                  <a href="mailto:nyme.contact@gmail.com" className="text-orange-600 font-semibold">
+                    nyme.contact@gmail.com
+                  </a>
                 </p>
               </div>
             )}
 
+            {/* Comparaison plans */}
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-50">
                 <p className="font-black text-gray-900 text-sm">Comparer les plans</p>
@@ -1204,21 +1474,29 @@ export default function PartenaireDashboard() {
                       {cfg.prix === 0 ? 'Devis' : `${(cfg.prix / 1000).toFixed(0)}k`}
                     </p>
                     <p className="text-gray-400 text-[10px]">FCFA/mois</p>
-                    <p className="text-gray-500 text-[10px] mt-1">{cfg.max < 9999 ? `${cfg.max} livr.` : '∞ livr.'}</p>
+                    <p className="text-gray-500 text-[10px] mt-1">
+                      {cfg.max < 9999 ? `${cfg.max} livr.` : '∞ livr.'}
+                    </p>
                     {partenaire?.plan === key && (
-                      <span className="inline-block mt-2 text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full font-black">Actuel</span>
+                      <span className="inline-block mt-2 text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full font-black">
+                        Actuel
+                      </span>
                     )}
                   </div>
                 ))}
               </div>
               <div className="p-4 bg-gray-50 border-t border-gray-100 text-center">
                 <p className="text-gray-500 text-xs">Pour changer de plan, contactez NYME</p>
-                <a href="mailto:nyme.contact@gmail.com?subject=Changement de plan partenaire" className="text-orange-600 text-xs font-black hover:underline">
+                <a
+                  href="mailto:nyme.contact@gmail.com?subject=Changement de plan partenaire"
+                  className="text-orange-600 text-xs font-black hover:underline"
+                >
                   nyme.contact@gmail.com
                 </a>
               </div>
             </div>
 
+            {/* Historique transactions */}
             {txWallet.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
                 <div className="p-4 border-b border-gray-50">
@@ -1226,7 +1504,9 @@ export default function PartenaireDashboard() {
                 </div>
                 {txWallet.map((tx: any, i) => (
                   <div key={i} className="flex items-center gap-3 p-4 border-b border-gray-50 last:border-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base ${tx.montant > 0 ? 'bg-green-100' : 'bg-orange-100'}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base ${
+                      tx.montant > 0 ? 'bg-green-100' : 'bg-orange-100'
+                    }`}>
                       {tx.montant > 0 ? '⬆️' : '⬇️'}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -1247,6 +1527,7 @@ export default function PartenaireDashboard() {
         {tab === 'compte' && (
           <div className="space-y-4">
             <h2 className="text-lg font-black text-gray-900">Mon compte</h2>
+
             {!editingProfil ? (
               <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-4 mb-5 pb-4 border-b border-gray-50">
@@ -1262,14 +1543,17 @@ export default function PartenaireDashboard() {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => setEditingProfil(true)} className="flex items-center gap-1.5 text-orange-600 text-xs font-black hover:underline">
+                  <button
+                    onClick={() => setEditingProfil(true)}
+                    className="flex items-center gap-1.5 text-orange-600 text-xs font-black hover:underline"
+                  >
                     <Edit2 size={12} />Modifier
                   </button>
                 </div>
                 {partenaire && [
-                  ['📧 Email pro',    partenaire.email_pro || '—'],
-                  ['📞 Téléphone',    partenaire.telephone || '—'],
-                  ['📍 Adresse',      (partenaire as any).adresse || '—'],
+                  ['📧 Email pro',     partenaire.email_pro || '—'],
+                  ['📞 Téléphone',     partenaire.telephone || '—'],
+                  ['📍 Adresse',       (partenaire as any).adresse || '—'],
                   ['📅 Membre depuis', new Date(partenaire.date_debut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })],
                 ].map(([l, v], i) => (
                   <div key={i} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
@@ -1291,16 +1575,28 @@ export default function PartenaireDashboard() {
                   ].map(f => (
                     <div key={f.key} className={f.key === 'adresse' ? 'sm:col-span-2' : ''}>
                       <label className="block text-xs font-black text-gray-400 uppercase tracking-wider mb-1.5">{f.label}</label>
-                      <input type={f.type} placeholder={f.ph}
+                      <input
+                        type={f.type}
+                        placeholder={f.ph}
                         value={profilForm[f.key as keyof typeof profilForm]}
-                        onChange={e => setProfilForm(p => ({ ...p, [f.key]: e.target.value }))} className={inp} />
+                        onChange={e => setProfilForm(p => ({ ...p, [f.key]: e.target.value }))}
+                        className={inp}
+                      />
                     </div>
                   ))}
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setEditingProfil(false)} className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700 text-sm">Annuler</button>
-                  <button onClick={handleSaveProfil} disabled={savingProfil}
-                    className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50">
+                  <button
+                    onClick={() => setEditingProfil(false)}
+                    className="flex-1 py-3 rounded-xl border-2 border-gray-200 font-bold text-gray-700 text-sm"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleSaveProfil}
+                    disabled={savingProfil}
+                    className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm disabled:opacity-50"
+                  >
                     {savingProfil ? '…' : '💾 Sauvegarder'}
                   </button>
                 </div>
@@ -1325,8 +1621,10 @@ export default function PartenaireDashboard() {
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              <a href="mailto:nyme.contact@gmail.com"
-                className="flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-orange-200 transition-all shadow-sm">
+              <a
+                href="mailto:nyme.contact@gmail.com"
+                className="flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-orange-200 transition-all shadow-sm"
+              >
                 <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
                   <Phone size={15} className="text-orange-600" />
                 </div>
@@ -1335,8 +1633,12 @@ export default function PartenaireDashboard() {
                   <p className="text-gray-400 text-xs">nyme.contact@gmail.com</p>
                 </div>
               </a>
-              <a href="https://wa.me/22600000000" target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-green-200 transition-all shadow-sm">
+              <a
+                href="https://wa.me/22600000000"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-green-200 transition-all shadow-sm"
+              >
                 <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-lg">💬</div>
                 <div>
                   <p className="font-black text-gray-900 text-sm">WhatsApp NYME</p>
@@ -1345,8 +1647,10 @@ export default function PartenaireDashboard() {
               </a>
             </div>
 
-            <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/partenaires/login' }}
-              className="w-full flex items-center justify-center gap-2 p-4 bg-white rounded-2xl border border-red-100 hover:border-red-300 text-red-600 font-black text-sm transition-all shadow-sm">
+            <button
+              onClick={async () => { await supabase.auth.signOut(); window.location.href = '/partenaires/login' }}
+              className="w-full flex items-center justify-center gap-2 p-4 bg-white rounded-2xl border border-red-100 hover:border-red-300 text-red-600 font-black text-sm transition-all shadow-sm"
+            >
               <LogOut size={14} />Se déconnecter
             </button>
           </div>
@@ -1359,10 +1663,14 @@ export default function PartenaireDashboard() {
 
       {/* ══ MODAL DÉTAIL LIVRAISON ══ */}
       {detail && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl"
-            onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setDetail(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="p-5 border-b border-gray-50 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
               <div>
                 <h3 className="font-black text-gray-900">#{detail.id.slice(0, 8).toUpperCase()}</h3>
@@ -1376,6 +1684,7 @@ export default function PartenaireDashboard() {
               </div>
             </div>
             <div className="p-5 space-y-4">
+
               {detail.lat_depart && detail.lng_depart && detail.lat_arrivee && detail.lng_arrivee && (
                 <div className="h-44 rounded-xl overflow-hidden border border-gray-100">
                   <MapAdvanced
@@ -1384,6 +1693,7 @@ export default function PartenaireDashboard() {
                   />
                 </div>
               )}
+
               <div className="bg-gray-50 rounded-xl p-4 space-y-3">
                 <div className="flex items-start gap-3">
                   <div className="w-7 h-7 bg-orange-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
@@ -1405,6 +1715,7 @@ export default function PartenaireDashboard() {
                   </div>
                 </div>
               </div>
+
               {[
                 ['👤 Destinataire', detail.destinataire_nom || '—'],
                 ['💰 Prix', detail.prix ? fXOF(detail.prix) : 'Inclus dans votre abonnement'],
@@ -1415,15 +1726,21 @@ export default function PartenaireDashboard() {
                   <span className="text-gray-900 text-sm text-right font-semibold">{v}</span>
                 </div>
               ))}
+
               {detail.destinataire_tel && (
                 <div className="flex gap-2 pt-1">
-                  <a href={`tel:${detail.destinataire_tel}`}
-                    className="flex-1 py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white font-black text-sm text-center flex items-center justify-center gap-2 transition-colors">
+                  <a
+                    href={`tel:${detail.destinataire_tel}`}
+                    className="flex-1 py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white font-black text-sm text-center flex items-center justify-center gap-2 transition-colors"
+                  >
                     📞 Appeler
                   </a>
-                  <a href={`https://wa.me/226${detail.destinataire_tel.replace(/\D/g, '')}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="flex-1 py-3 rounded-xl bg-[#25D366] hover:bg-[#1da84f] text-white font-black text-sm text-center flex items-center justify-center gap-2 transition-colors">
+                  <a
+                    href={`https://wa.me/226${detail.destinataire_tel.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-3 rounded-xl bg-[#25D366] hover:bg-[#1da84f] text-white font-black text-sm text-center flex items-center justify-center gap-2 transition-colors"
+                  >
                     💬 WhatsApp
                   </a>
                 </div>
