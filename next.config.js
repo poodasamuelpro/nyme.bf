@@ -1,4 +1,4 @@
-// next.config.js
+// next.config.js 
 // CORRECTIONS AUDIT :
 //   [FIX-A] remotePatterns étendu — unpkg.com ajouté (icônes Leaflet)
 //   [FIX-B] CSP img-src — *.tile.openstreetmap.org + unpkg.com ajoutés (tuiles + icônes Leaflet)
