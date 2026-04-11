@@ -150,7 +150,8 @@ export default function PartenaireDashboard() {
   const [soldeWallet, setSoldeWallet] = useState(0)
   const [txWallet,    setTxWallet]    = useState<any[]>([])
   const [coursierFavori, setCoursierFavori] = useState<CoursierActif | null>(null)
-  const coursierPositionsRef = useRef(new Map() as Map<string, {lat: number; lng: number}>)
+  const _initMap: Array<[string, {lat: number; lng: number}]> = []
+  const coursierPositionsRef = useRef(new Map(_initMap))
   const [editingProfil, setEditingProfil] = useState(false)
   const [profilForm, setProfilForm] = useState({ entreprise: '', nom_contact: '', telephone: '', email_pro: '', adresse: '' })
   const [savingProfil, setSavingProfil] = useState(false)
