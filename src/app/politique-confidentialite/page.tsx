@@ -21,7 +21,7 @@ En accédant à nos services, vous reconnaissez avoir pris connaissance de la pr
 Dénomination : NYME
 Localisation : Ouagadougou, Burkina Faso
 Email de contact : nyme.contact@gmail.com
-Téléphone : +226 22 67 79 80 264`
+Téléphone : +226 77 98 02 64`
   },
   {
     id: 'collecte', title: '2. Données personnelles que nous collectons',
@@ -206,7 +206,7 @@ Vous pouvez recevoir vos données dans un format structuré, lisible par machine
 
 **Comment exercer vos droits ?**
 Contactez-nous à : nyme.contact@gmail.com
-📞 +226 22 67 79 80 264
+📞 +226 77 98 02 64
 Nous traitons toutes les demandes dans un délai maximum de 30 jours.`
   },
   {
@@ -254,7 +254,7 @@ La date de dernière mise à jour est indiquée en en-tête de cette page.`
     content: `Pour toute question, demande ou réclamation relative à la présente Politique de Confidentialité ou au traitement de vos données personnelles, vous pouvez nous contacter :
 
 📧 Email : nyme.contact@gmail.com
-📞 Téléphone : +226 22 67 79 80 264
+📞 Téléphone : +226 77 98 02 64
 📍 Adresse : Ouagadougou, Burkina Faso
 
 Nous nous engageons à répondre à toute demande dans un délai maximum de 30 jours ouvrables.
