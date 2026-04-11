@@ -47,10 +47,10 @@ function CoursierSVG() {
 }
 
 const deliveries = [
-  { route: 'Ouaga 2000 → Hamdallaye',   price: '3 500 FCFA', time: '25 min', gain: '+2 975 FCFA' },
-  { route: "Tampouy → Patte d'Oie",     price: '2 800 FCFA', time: '18 min', gain: '+2 380 FCFA' },
-  { route: 'Ouaga Inter → Gounghin',    price: '4 200 FCFA', time: '32 min', gain: '+3 570 FCFA' },
-  { route: 'Zone du Bois → Dapoya',     price: '1 900 FCFA', time: '12 min', gain: '+1 615 FCFA' },
+  { route: 'Ouaga 2000 → Hamdallaye',   price: '1 800 FCFA', time: '25 min', gain: '+1 400 FCFA' },
+  { route: "Tampouy → Patte d'Oie",     price: '1 500 FCFA', time: '18 min', gain: '+1 150 FCFA' },
+  { route: 'Ouaga Inter → Gounghin',    price: '2 200 FCFA', time: '32 min', gain: '+1 800 FCFA' },
+  { route: 'Zone du Bois → Dapoya',     price: '1 000 FCFA', time: '12 min', gain: '+750 FCFA'  },
 ]
 
 export default function ForCouriersSection() {
@@ -86,7 +86,7 @@ export default function ForCouriersSection() {
               <span className="text-gradient"> moto ou vélo</span>
             </h2>
             <p className="text-white/70 font-body text-base sm:text-lg leading-relaxed mb-6 sm:mb-8">
-              Rejoignez la communauté NYME et transformez vos déplacements en revenus. Vous choisissez vos horaires, vos zones, vos tarifs.
+              Rejoignez la communauté NYME et transformez vos trajets en revenus. Vous choisissez vos horaires, vos zones d'activité et vous êtes payé directement après chaque livraison.
             </p>
 
             <div className="glass rounded-2xl border border-nyme-blue-light/22 mb-6 overflow-hidden">
@@ -95,10 +95,10 @@ export default function ForCouriersSection() {
 
             <div className="space-y-3 mb-6 sm:mb-8">
               {[
-                { emoji: '💰', title: 'Revenus directs',        desc: 'Recevez vos gains après chaque livraison dans votre wallet NYME' },
-                { emoji: '🗓️', title: 'Flexibilité totale',     desc: 'Travaillez quand vous voulez. Vous contrôlez votre statut' },
-                { emoji: '⭐', title: 'Badge "Favori"',          desc: 'Construisez votre réputation et soyez demandé en priorité' },
-                { emoji: '📱', title: 'App simple & intuitive', desc: 'Interface conçue pour une utilisation rapide même en mouvement' },
+                { emoji: '💰', title: 'Paiement instantané',    desc: 'Vos gains sont crédités sur votre wallet NYME immédiatement après chaque livraison confirmée' },
+                { emoji: '🗓️', title: 'Flexibilité totale',     desc: 'Activez ou désactivez votre disponibilité en un geste. Vous êtes votre propre patron' },
+                { emoji: '⭐', title: 'Badge "Coursier favori"', desc: 'Construisez votre réputation grâce aux évaluations clients et soyez sollicité en priorité' },
+                { emoji: '📱', title: 'Application intuitive',  desc: 'Interface conçue pour une utilisation rapide, même en déplacement, avec guidage GPS intégré' },
               ].map((item, i) => (
                 <div
                   key={item.title}
@@ -125,7 +125,7 @@ export default function ForCouriersSection() {
           {/* Gains mockup */}
           <div className={`transition-all duration-700 delay-200 ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8'}`}>
             <div className="glass rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-nyme-blue-light/22">
-              <h3 className="font-heading text-white text-lg sm:text-xl font-bold mb-4 sm:mb-6">💼 Exemple de gains quotidiens</h3>
+              <h3 className="font-heading text-white text-lg sm:text-xl font-bold mb-4 sm:mb-6">💼 Exemple de gains journaliers</h3>
 
               <div className="space-y-2 sm:space-y-3 mb-4 sm:mb-6">
                 {deliveries.map((d, i) => (
@@ -151,19 +151,19 @@ export default function ForCouriersSection() {
                 <div className="flex justify-between items-center">
                   <div>
                     <div className="text-white/80 text-xs sm:text-sm font-body font-semibold">Total journée (4 courses)</div>
-                    <div className="text-white/45 text-[10px] font-body">après commission NYME (15%)</div>
+                    <div className="text-white/45 text-[10px] font-body">après commission NYME déduite</div>
                   </div>
                   <div>
-                    <div className="text-nyme-orange font-heading text-xl sm:text-2xl font-bold">12 400</div>
+                    <div className="text-nyme-orange font-heading text-xl sm:text-2xl font-bold">5 100</div>
                     <div className="text-nyme-orange/65 text-[10px] text-right font-body">FCFA</div>
                   </div>
                 </div>
               </div>
 
               <div className="mt-4 p-3 rounded-xl bg-nyme-primary/22 border border-nyme-blue-light/22 text-center">
-                <p className="text-white/55 text-xs font-body">🚧 Application en cours de développement</p>
+                <p className="text-white/55 text-xs font-body">🚧 Application en cours de déploiement</p>
                 <a href="/coursier/login" className="block text-nyme-blue-light text-xs mt-1 font-body font-semibold hover:underline">
-                  Inscrivez-vous pour être notifié au lancement
+                  Pré-inscrivez-vous pour être notifié au lancement
                 </a>
               </div>
             </div>
