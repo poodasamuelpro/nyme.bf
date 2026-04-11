@@ -2,7 +2,8 @@
 // ✅ Vrais prix (45k/90k/devis) | ✅ Abonnement mensuel wallet | ✅ Pas de commission UI
 // ✅ Carte temps réel | ✅ Design app livraison production-grade
 // CORRECTIONS :
-//   [FIX-1] coursierPositionsMap déclaré au niveau module (strict TS)
+//   [FIX-1] coursierPositionsMap : suppression de la variable module-level problématique
+//           → useRef initialisé directement avec new Map<string, CoursierPos>()
 //   [FIX-2] Bug carte : deux .find() séparés pouvaient retourner des coursiers différents
 //   [FIX-3] Cleanup useEffect async — canaux et interval correctement nettoyés
 //   [FIX-4] contacts_favoris : adresse_habituelle sauvegardée dans la bonne colonne
@@ -46,11 +47,8 @@ interface CoursierActif {
   lng_actuelle: number | null
 }
 
-// [FIX-1] Map déclaré au niveau MODULE — tsconfig strict=true interdit
-// new Map() sans generic dans un composant React (inférence impossible).
-// La Map module-level est typée explicitement et partagée via useRef.
+// [FIX-1] Interface déplacée ici, Map instanciée directement dans useRef — plus de variable module-level
 interface CoursierPos { lat: number; lng: number }
-const _coursierPositionsMap = new Map<string, CoursierPos>()
 
 // ── Config plans ───────────────────────────────────────────────────
 
@@ -175,8 +173,8 @@ export default function PartenaireDashboard() {
   const [contactForm,     setContactForm]     = useState({ nom: '', telephone: '', whatsapp: '', adresse_habituelle: '' })
   const [savingContact,   setSavingContact]   = useState(false)
 
-  // [FIX-1] useRef pointe vers l'instance module-level typée
-  const coursierPositionsRef = useRef(_coursierPositionsMap)
+  // [FIX-1] useRef initialisé directement avec le type explicite — pas de variable module-level
+  const coursierPositionsRef = useRef<Map<string, CoursierPos>>(new Map<string, CoursierPos>())
 
   // ── Rafraîchissement positions coursiers (polling 5s) ──────────
 
