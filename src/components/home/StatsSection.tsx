@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 const stats = [
-  { value: '30 min', label: 'Délai moyen de livraison',         emoji: '⚡', num: 30,  suffix: ' min'  },
-  { value: '100%',   label: 'Coursiers vérifiés CNI+Permis',    emoji: '🛡️', num: 100, suffix: '%'     },
-  { value: '3',      label: 'Opérateurs Mobile Money acceptés', emoji: '💳', num: 3,   suffix: ' ops'  },
-  { value: '24h/7j', label: 'Service client disponible',        emoji: '🎧', num: 24,  suffix: 'h/7j'  },
+  { value: '~30 min', label: 'Délai moyen de livraison',          emoji: '⚡', num: 30,  suffix: ' min'  },
+  { value: '100%',    label: 'Coursiers vérifiés (CNI + Permis)',  emoji: '🛡️', num: 100, suffix: '%'     },
+  { value: '3',       label: 'Opérateurs Mobile Money acceptés',   emoji: '💳', num: 3,   suffix: ' ops'  },
+  { value: '7j/7',    label: 'Service client disponible',          emoji: '🎧', num: 7,   suffix: 'j/7'  },
 ]
 
 function CountUp({ target, suffix, active }: { target: number; suffix: string; active: boolean }) {
