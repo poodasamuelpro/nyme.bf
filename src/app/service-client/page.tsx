@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import ServiceClientContent from './ServiceClientContent'
 
 export const metadata: Metadata = {
-  title: 'Service Client — NYME',
-  description: "Centre d'aide NYME. FAQ, support, signalement de problèmes. Notre équipe est disponible 7j/7 pour vous aider.",
+  title: 'Centre d\'aide & Support — NYME',
+  description: 'Centre d\'aide NYME. Réponses à vos questions sur les livraisons, paiements, sécurité et votre compte. FAQ complète et contacts du support.',
 }
 
 export default function ServiceClientPage() {
