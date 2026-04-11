@@ -4,15 +4,15 @@ import { useEffect, useRef, useState } from 'react'
 
 const methods = [
   { emoji: '💵', name: 'Cash',        desc: 'Payez à la livraison', color: 'from-green-500/22 to-green-500/5',              border: 'border-green-500/35',        glow: 'shadow-green-500/22' },
-  { emoji: '🟠', name: 'Orange Money', desc: 'Paiement Orange',    color: 'from-orange-500/22 to-orange-500/5',             border: 'border-orange-500/35',       glow: 'shadow-orange-500/22' },
+  { emoji: '🟠', name: 'Orange Money', desc: 'Paiement sécurisé Orange',    color: 'from-orange-500/22 to-orange-500/5',             border: 'border-orange-500/35',       glow: 'shadow-orange-500/22' },
   { emoji: '🔵', name: 'Moov Money',  desc: 'Transfert Moov',      color: 'from-nyme-blue-light/22 to-nyme-blue-light/5',  border: 'border-nyme-blue-light/35',  glow: 'shadow-nyme-blue-light/22' },
   { emoji: '💜', name: 'Wave',        desc: 'Paiement Wave',        color: 'from-purple-500/22 to-purple-500/5',             border: 'border-purple-500/35',       glow: 'shadow-purple-500/22' },
 ]
 
 const rows = [
-  { label: 'Tarif par km (500 FCFA × 5)',            value: '2 500 FCFA' },
-  { label: 'Tarif par minute (50 FCFA × 15 min)',    value: '750 FCFA' },
-  { label: 'Frais de service NYME',                  value: '500 FCFA' },
+  { label: 'Frais de départ (course courte — 2 km)',    value: '800 FCFA' },
+  { label: 'Tarif kilométrique (600 FCFA × 2 km)',      value: '1 200 FCFA' },
+  { label: 'Frais de service NYME',                     value: '200 FCFA' },
 ]
 
 export default function PaymentSection() {
@@ -43,7 +43,7 @@ export default function PaymentSection() {
             Payez comme vous voulez
           </h2>
           <p className="text-white/70 font-body text-base sm:text-lg max-w-xl mx-auto px-4">
-            Cash à la livraison ou paiement mobile — 100% adapté au marché burkinabè.
+            Cash à la livraison ou Mobile Money — 100% adapté au marché burkinabè, sans frais cachés.
           </p>
         </div>
 
@@ -69,7 +69,7 @@ export default function PaymentSection() {
         {/* Calculateur */}
         <div className={`max-w-2xl mx-auto glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 border border-nyme-orange/22 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
           <h3 className="font-heading text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2 text-center">Exemple de tarification</h3>
-          <p className="text-white/55 text-xs sm:text-sm text-center mb-5 sm:mb-6 font-body">Pour une livraison de 5 km à Ouagadougou</p>
+          <p className="text-white/55 text-xs sm:text-sm text-center mb-5 sm:mb-6 font-body">Pour une livraison courte distance à Ouagadougou (2 km)</p>
 
           <div className="space-y-2 sm:space-y-3 mb-4 sm:mb-6">
             {rows.map((row) => (
@@ -82,11 +82,14 @@ export default function PaymentSection() {
 
           <div className="flex justify-between items-center p-3 sm:p-4 rounded-xl bg-nyme-orange/12 border border-nyme-orange/25">
             <span className="text-white font-bold text-sm sm:text-base font-body">Total client</span>
-            <span className="text-nyme-orange font-heading text-xl sm:text-2xl font-bold">3 750 FCFA</span>
+            <span className="text-nyme-orange font-heading text-xl sm:text-2xl font-bold">2 200 FCFA</span>
           </div>
 
           <p className="text-center text-white/40 text-[10px] sm:text-xs mt-3 sm:mt-4 font-body">
-            * Le client peut négocier ce prix à la hausse ou à la baisse
+            * Le client peut négocier ce prix à la hausse ou à la baisse selon l'accord avec le coursier
+          </p>
+          <p className="text-center text-nyme-orange/70 text-[10px] sm:text-xs mt-1 font-body font-semibold">
+            📌 Prix minimum garanti : 800 FCFA · Tarifs dégressifs selon la distance
           </p>
         </div>
       </div>
