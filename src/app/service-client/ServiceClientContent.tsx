@@ -155,7 +155,7 @@ export default function ServiceClientContent() {
         {/* Contact rapide */}
         <div className="grid sm:grid-cols-3 gap-4 mb-16">
           {[
-            { icon: Phone,        label: 'Appeler',       sub: '+226 22 67 79 80 264',  href: 'tel:+22622677980264',           color: 'border-nyme-orange/35 hover:border-nyme-orange/70', iconColor: 'text-nyme-orange' },
+            { icon: Phone,        label: 'Appeler',       sub: '+226 77 98 02 64',  href: 'tel:+226 77 98 02 64',           color: 'border-nyme-orange/35 hover:border-nyme-orange/70', iconColor: 'text-nyme-orange' },
             { icon: Mail,         label: 'Email',         sub: 'nyme.contact@gmail.com', href: 'mailto:nyme.contact@gmail.com', color: 'border-nyme-blue-light/35 hover:border-nyme-blue-light/70', iconColor: 'text-nyme-blue-light' },
             { icon: MessageSquare, label: 'Chat in-app',  sub: "Dans l'espace client NYME", href: '/login',                    color: 'border-green-500/35 hover:border-green-500/70', iconColor: 'text-green-400' },
           ].map(({ icon: Icon, label, sub, href, color, iconColor }) => (
