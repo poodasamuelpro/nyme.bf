@@ -1,0 +1,483 @@
+# 📖 Documentation Technique — NYME Web App
+
+## Architecture et configuration de la base de données pour l'application web Next.js
+
+---
+
+> **Important** : Ce document remplace la documentation Flutter/mobile.  
+> Il est destiné aux développeurs travaillant sur la plateforme web NYME (Next.js + TypeScript).  
+> Les informations sensibles (URLs, clés API, identifiants) ne doivent jamais être committées en clair dans le dépôt.
+
+---
+
+## 1. Vue d'ensemble de l'architecture
+
+### Stack technique
+
+```
+Frontend / Backend      Next.js 14+ (App Router)
+Langage                 TypeScript
+Base de données         Gérée par le service de BDD distant
+ORM / Client            Client configuré dans src/lib/
+Authentification        Intégrée via le service de BDD
+Temps réel              Subscriptions via le client BDD
+Notifications push      Service de notification tiers
+Paiements               Prestataires de paiement Mobile Money (BF)
+Cartographie            Service de géocodage et d'itinéraires
+Hébergement             Plateforme cloud (variables d'environnement à configurer)
+```
+
+### Structure des rôles utilisateurs
+
+| Rôle            | Description |
+|-----------------|-------------|
+| `client`        | Utilisateur standard commandant des livraisons |
+| `coursier`      | Prestataire indépendant effectuant les livraisons |
+| `partenaire`    | Entreprise abonnée à une formule mensuelle |
+| `admin`         | Administrateur avec accès complet |
+
+---
+
+## 2. Variables d'environnement
+
+Créez un fichier `.env.local` à la racine du projet (ne jamais le committer).  
+Copiez `.env.example` et remplissez les valeurs :
+
+```bash
+# ── Base de données & Authentification ──────────────────────────────────
+DATABASE_URL=                    # URL de connexion à la base de données
+DATABASE_ANON_KEY=               # Clé publique (lecture limitée)
+DATABASE_SERVICE_KEY=            # Clé service (JAMAIS exposée côté client)
+
+# ── Application web ─────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL=             # URL publique de l'app (ex: https://nyme.app)
+
+# ── Notifications push ──────────────────────────────────────────────────
+FIREBASE_SERVER_KEY=             # Clé serveur Firebase Cloud Messaging
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+
+# ── Paiements Mobile Money ──────────────────────────────────────────────
+CINETPAY_API_KEY=                # Clé API CinetPay
+CINETPAY_SITE_ID=
+FLUTTERWAVE_SECRET_KEY=          # Clé secrète Flutterwave
+ORANGE_MONEY_CLIENT_ID=          # Credentials Orange Money BF
+ORANGE_MONEY_CLIENT_SECRET=
+DUNIAPAY_API_KEY=                # Clé API DuniaPay (Wave BF)
+
+# ── Cartographie ────────────────────────────────────────────────────────
+NEXT_PUBLIC_MAPBOX_TOKEN=        # Token Mapbox pour les cartes
+
+# ── Email transactionnel ─────────────────────────────────────────────────
+EMAIL_HOST=
+EMAIL_PORT=
+EMAIL_USER=
+EMAIL_PASS=
+EMAIL_FROM=nyme.contact@gmail.com
+
+# ── Appels WebRTC ────────────────────────────────────────────────────────
+TURN_SERVER_URL=
+TURN_SERVER_USERNAME=
+TURN_SERVER_CREDENTIAL=
+
+# ── Météo (tarification dynamique) ──────────────────────────────────────
+NEXT_PUBLIC_OPENWEATHER_KEY=     # Clé OpenWeatherMap (Ouagadougou)
+```
+
+---
+
+## 3. Schéma de la base de données
+
+### Tables principales
+
+#### `utilisateurs`
+Étend la table d'authentification native.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant unique (lié au compte auth) |
+| `email` | text | Adresse email |
+| `nom` | text | Nom complet |
+| `telephone` | text | Numéro de téléphone |
+| `role` | enum | `client`, `coursier`, `partenaire`, `admin` |
+| `photo_url` | text | URL de la photo de profil |
+| `actif` | boolean | Compte actif ou suspendu |
+| `created_at` | timestamptz | Date de création |
+
+#### `coursiers`
+Informations complémentaires pour les coursiers.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant (= utilisateurs.id) |
+| `type_vehicule` | enum | `moto`, `velo`, `voiture`, `camionnette` |
+| `marque_vehicule` | text | Marque du véhicule |
+| `immatriculation` | text | Numéro de plaque |
+| `photo_vehicule_url` | text | Photo du véhicule |
+| `cni_url` | text | Scan CNI (espace privé sécurisé) |
+| `permis_url` | text | Scan permis de conduire |
+| `carte_grise_url` | text | Scan carte grise |
+| `statut_validation` | enum | `en_attente`, `valide`, `refuse` |
+| `disponible` | boolean | Disponibilité en temps réel |
+| `note_moyenne` | numeric | Moyenne des évaluations |
+| `total_livraisons` | integer | Nombre total de livraisons effectuées |
+
+#### `livraisons`
+Cœur du système — chaque demande de livraison.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant unique |
+| `client_id` | uuid (FK) | Référence vers utilisateurs |
+| `coursier_id` | uuid (FK) | Référence vers coursiers (nullable) |
+| `adresse_depart` | text | Adresse de récupération |
+| `adresse_arrivee` | text | Adresse de livraison |
+| `lat_depart` | numeric | Latitude départ |
+| `lng_depart` | numeric | Longitude départ |
+| `lat_arrivee` | numeric | Latitude arrivée |
+| `lng_arrivee` | numeric | Longitude arrivée |
+| `distance_km` | numeric | Distance calculée |
+| `type_course` | enum | `immediate`, `urgente`, `programmee` |
+| `statut` | enum | `en_attente`, `acceptee`, `en_route`, `recupere`, `livre`, `annulee` |
+| `prix_propose_client` | integer | Prix proposé par le client (FCFA) |
+| `prix_final` | integer | Prix accepté final (FCFA) |
+| `mode_paiement` | enum | `cash`, `orange_money`, `moov_money`, `wave`, `wallet` |
+| `paiement_statut` | enum | `en_attente`, `paye`, `echoue`, `rembourse` |
+| `date_programmee` | timestamptz | Heure planifiée (si programmée) |
+| `photo_recuperation_url` | text | Photo à la récupération |
+| `photo_livraison_url` | text | Photo à la livraison |
+| `token_suivi` | text | Token unique pour le lien de suivi |
+| `destinataire_nom` | text | Nom du destinataire (si tiers) |
+| `destinataire_telephone` | text | Téléphone du destinataire |
+| `created_at` | timestamptz | Date de création |
+
+#### `propositions_prix`
+Négociation de prix entre client et coursiers.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant |
+| `livraison_id` | uuid (FK) | Référence vers livraisons |
+| `coursier_id` | uuid (FK) | Coursier qui propose |
+| `montant` | integer | Montant proposé (FCFA) |
+| `statut` | enum | `en_attente`, `acceptee`, `refusee`, `expiree` |
+| `created_at` | timestamptz | Date de la proposition |
+
+#### `localisation_coursier`
+Position GPS en temps réel des coursiers actifs.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `coursier_id` | uuid (PK, FK) | Référence coursier |
+| `latitude` | numeric | Position latitude |
+| `longitude` | numeric | Position longitude |
+| `cap` | numeric | Direction (degrés) |
+| `vitesse` | numeric | Vitesse approximative |
+| `updated_at` | timestamptz | Dernière mise à jour |
+
+#### `wallets`
+Portefeuilles numériques des utilisateurs.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant |
+| `user_id` | uuid (FK) | Propriétaire du wallet |
+| `solde` | integer | Solde actuel (FCFA) |
+| `total_gagne` | integer | Total cumulé des gains (coursiers) |
+| `total_retire` | integer | Total des retraits effectués |
+
+#### `transactions_wallet`
+Historique de toutes les opérations de wallet.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant |
+| `wallet_id` | uuid (FK) | Wallet concerné |
+| `type` | enum | `credit`, `debit`, `retrait`, `remboursement` |
+| `montant` | integer | Montant de l'opération (FCFA) |
+| `solde_apres` | integer | Solde après opération |
+| `reference` | text | Référence de transaction |
+| `description` | text | Description lisible |
+| `created_at` | timestamptz | Date |
+
+#### `config_tarifs`
+Configuration de la tarification — modifiable par l'admin sans redéploiement.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant |
+| `actif` | boolean | Configuration active |
+| `frais_fixe_immediate` | integer | Frais fixes course immédiate (FCFA) |
+| `frais_fixe_urgente` | integer | Frais fixes course urgente (FCFA) |
+| `frais_fixe_programmee` | integer | Frais fixes course programmée (FCFA) |
+| `prix_minimum` | integer | Prix minimum absolu (FCFA) |
+| `multiplicateur_urgente` | numeric | Coefficient majorateur urgence (ex: 1.25) |
+| `multiplicateur_programmee` | numeric | Coefficient minorant programmée (ex: 0.90) |
+| `multiplicateur_pluie` | numeric | Coefficient météo pluie (ex: 1.15) |
+| `pluie_actif` | boolean | Activer la majoration pluie |
+| `commission_immediate` | integer | Commission NYME fixe immédiate |
+| `commission_urgente` | integer | Commission NYME fixe urgente |
+| `commission_programmee` | integer | Commission NYME fixe programmée |
+
+#### `tarifs_baremes`
+Barèmes kilométriques dégressifs par tranche.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | uuid (PK) | Identifiant |
+| `km_min` | numeric | Début de tranche (km) |
+| `km_max` | numeric | Fin de tranche (km) |
+| `prix_par_km` | integer | Tarif au kilomètre dans cette tranche (FCFA) |
+| `label` | text | Libellé descriptif |
+| `ordre` | integer | Ordre d'application |
+| `actif` | boolean | Tranche active |
+
+---
+
+## 4. Politiques de sécurité (Row Level Security)
+
+Toutes les tables sont protégées par des politiques de sécurité au niveau des lignes (RLS). Voici les principes clés :
+
+### Principe général
+- Chaque utilisateur ne peut lire et modifier que ses propres données
+- Les coursiers n'ont accès qu'aux livraisons qui leur sont assignées ou disponibles
+- Les admins ont accès complet à toutes les tables
+- Les données sensibles (documents d'identité) ne sont accessibles qu'aux admins
+
+### Exemples de politiques critiques
+
+```sql
+-- Un client ne voit que ses propres livraisons
+CREATE POLICY "clients_own_livraisons" ON livraisons
+  FOR SELECT USING (client_id = auth.uid());
+
+-- Un coursier voit les livraisons disponibles et celles qui lui sont assignées
+CREATE POLICY "coursiers_view_livraisons" ON livraisons
+  FOR SELECT USING (
+    statut = 'en_attente'
+    OR coursier_id = auth.uid()
+  );
+
+-- Seuls les admins voient les documents d'identité des coursiers
+CREATE POLICY "admin_only_identites" ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'identites-coursiers'
+    AND EXISTS (
+      SELECT 1 FROM utilisateurs
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+```
+
+---
+
+## 5. Flux de données — Cycle d'une livraison
+
+```
+1. CLIENT crée une livraison (statut: en_attente)
+   ↓
+2. SYSTÈME calcule le prix via src/lib/tarifs.ts
+   ↓
+3. COURSIERS reçoivent la notification (Realtime + Push)
+   ↓
+4. COURSIER fait une proposition de prix
+   ↓
+5. CLIENT accepte une proposition → livraison assignée au coursier
+   ↓
+6. COURSIER met à jour son statut (en_route → recupere → livre)
+   ↓
+7. PAIEMENT traité par le prestataire de paiement
+   ↓
+8. GAIN du coursier = prix_final - commission_nyme → crédité sur wallet
+   ↓
+9. ÉVALUATION du coursier par le client
+```
+
+---
+
+## 6. Temps réel — Canaux de souscription
+
+Les mises à jour en temps réel s'appuient sur les subscriptions du client de base de données :
+
+```typescript
+// Suivre la position d'un coursier
+const channel = supabase
+  .channel(`position-coursier-${courseId}`)
+  .on('postgres_changes', {
+    event: 'UPDATE',
+    schema: 'public',
+    table: 'localisation_coursier',
+    filter: `coursier_id=eq.${coursierId}`,
+  }, (payload) => {
+    updateMapPosition(payload.new)
+  })
+  .subscribe()
+
+// Écouter les nouvelles propositions de prix
+const channel = supabase
+  .channel(`propositions-${livraisonId}`)
+  .on('postgres_changes', {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'propositions_prix',
+    filter: `livraison_id=eq.${livraisonId}`,
+  }, (payload) => {
+    addProposition(payload.new)
+  })
+  .subscribe()
+```
+
+Tables nécessitant la réplication Realtime activée :
+- ✅ `localisation_coursier`
+- ✅ `messages`
+- ✅ `livraisons`
+- ✅ `propositions_prix`
+
+---
+
+## 7. Notifications push — Architecture
+
+Les notifications push mobiles sont gérées via Firebase Cloud Messaging (FCM).
+
+### Flux de notification
+```
+Événement (ex: livraison acceptée)
+  ↓
+Route API Next.js (src/app/api/...)
+  ↓
+src/services/firebase-notification-service.ts
+  ↓
+FCM → Appareil mobile du destinataire
+```
+
+### Types de notifications gérés
+| Événement | Destinataire |
+|-----------|-------------|
+| Coursier trouvé | Client |
+| Nouvelle livraison disponible | Coursiers proches |
+| Coursier en route | Client + Destinataire |
+| Colis récupéré | Client + Destinataire |
+| Livraison confirmée | Client + Destinataire |
+| Nouveau message chat | Client ou Coursier |
+| Paiement reçu | Coursier |
+| Dossier validé/refusé | Coursier |
+
+---
+
+## 8. Système de paiement
+
+### Prestataires intégrés
+- **CinetPay** : paiement Mobile Money (Orange Money, Moov Money)
+- **Flutterwave** : paiement alternatif (Wave)
+- **DuniaPay** : paiement Wave Burkina Faso
+- **Orange Money BF** : intégration directe Orange BF
+
+### Flux de paiement en ligne
+```
+Client initie paiement → src/app/api/payment/initiate/route.ts
+  ↓
+Redirection vers la page de paiement du prestataire
+  ↓
+Callback de confirmation → src/app/api/payment/[provider]/callback/route.ts
+  ↓
+Vérification → src/app/api/payment/verify/route.ts
+  ↓
+Mise à jour statut livraison + crédit wallet coursier
+```
+
+### Sécurité des paiements
+- Toutes les clés de paiement sont exclusivement côté serveur (variables d'environnement)
+- Aucune clé secrète n'est jamais exposée dans le code client ou dans le navigateur
+- Chaque transaction est vérifiée côté serveur avant d'être enregistrée
+
+---
+
+## 9. Module de tarification (src/lib/tarifs.ts)
+
+La tarification est centralisée dans un seul fichier source de vérité :
+- Lit la configuration depuis la base de données (cache 5 minutes)
+- Applique les barèmes kilométriques dégressifs par tranche
+- Applique les modificateurs selon le type de course (immédiate / urgente / programmée)
+- Prend en compte les conditions météo (si activé dans la config admin)
+- Inclut un fallback synchrone avec barèmes par défaut si la base est inaccessible
+- La configuration est modifiable par l'admin depuis le dashboard sans redéploiement
+
+---
+
+## 10. Appels WebRTC (src/services/webrtc-call-service.ts)
+
+NYME intègre un système d'appels audio/vidéo entre clients et coursiers basé sur WebRTC :
+
+- **Serveur de signalisation** : géré via les canaux temps réel de la base de données
+- **Serveur TURN** : nécessaire pour traverser les NAT (credentials dans `.env.local`)
+- **Activation conditionnelle** : le WebRTC ne s'initialise que si une session utilisateur est active (optimisation performance)
+- **Pages publiques** (accueil, contact, partenaires) : aucun WebRTC chargé
+
+---
+
+## 11. Migrations SQL
+
+L'ordre d'exécution des migrations est important :
+
+```
+001_schema_complet.sql          → Tables principales, types, indexes
+002_rls_policies.sql            → Politiques de sécurité Row Level Security
+003_wallet_transactions.sql     → Système de wallet et transactions
+004_partenaires.sql             → Tables et logique partenaires
+005_corrections_email_confirm.sql → Corrections auth email
+006_auth_partenaire_admin.sql   → Rôles partenaire et admin
+Migration 007 (baremes)         → Barèmes de tarification dégressifs
+008_payments_multiprovider.sql  → Support multi-prestataires de paiement
+009_suivi_tokens.sql            → Tokens de suivi pour destinataires
+010_corrections_finales.sql     → Corrections diverses
+011_evaluations_index_rls.sql   → Évaluations, index, RLS
+012_blocages_photos_colis.sql   → Système de blocage et photos
+013_webrtc_calls.sql            → Tables pour les appels WebRTC
+014_api_quota_rpc.sql           → Quotas API et fonctions RPC
+015_corrections_audit.sql       → Corrections après audit de sécurité
+016_courses_programmees_cron.sql → Cron job courses programmées
+017_securite_api_rate_limit.sql → Rate limiting API
+```
+
+Pour exécuter une migration :
+1. Ouvrir l'éditeur SQL du dashboard de base de données
+2. Coller le contenu du fichier de migration
+3. Exécuter et vérifier l'absence d'erreurs
+4. Procéder dans l'ordre numérique
+
+---
+
+## 12. Déploiement
+
+### Vérifications avant déploiement
+- [ ] Toutes les variables d'environnement sont définies
+- [ ] Les migrations SQL ont été exécutées dans l'ordre
+- [ ] Les politiques RLS sont actives sur toutes les tables sensibles
+- [ ] Les buckets de stockage sont créés avec les bonnes politiques
+- [ ] La réplication Realtime est activée pour les tables concernées
+- [ ] Les webhooks de paiement sont configurés chez les prestataires
+- [ ] Les domaines autorisés sont configurés dans les paramètres d'authentification
+
+### Commandes utiles
+
+```bash
+# Installer les dépendances
+npm install
+
+# Lancer en développement
+npm run dev
+
+# Build de production
+npm run build
+
+# Vérifier les types TypeScript
+npx tsc --noEmit
+```
+
+---
+
+*Documentation interne NYME — Confidentiel*  
+*Dernière mise à jour : Avril 2025*
