@@ -56,7 +56,7 @@ const plans = [
 ]
 
 const avantages = [
-  { icon: Package,    title: 'Livreur dédié',         desc: 'Un coursier assigné exclusivement à votre compte. Il connaît vos adresses fréquentes et s'adapte à vos horaires.',          color: 'text-nyme-primary', bg: 'bg-nyme-primary/10' },
+  { icon: Package,    title: 'Livreur dédié',         desc: "Un coursier assigné exclusivement à votre compte. Il connaît vos adresses fréquentes et s'adapte à vos horaires.",          color: 'text-nyme-primary', bg: 'bg-nyme-primary/10' },
   { icon: Zap,        title: 'Livraison express',      desc: "Priorité absolue dans l'attribution des courses. Vos commandes partent en premier, systématiquement.",                     color: 'text-nyme-orange',  bg: 'bg-nyme-orange/10'  },
   { icon: Shield,     title: 'Traçabilité complète',   desc: 'Photo à la récupération, photo à la livraison, confirmation de réception, historique complet exportable.',               color: 'text-nyme-green',   bg: 'bg-nyme-green/10'   },
   { icon: TrendingUp, title: 'Tableau de bord dédié',  desc: 'Espace privé avec statistiques, historique des livraisons, suivi des dépenses et rapports mensuels téléchargeables.',    color: 'text-nyme-violet',  bg: 'bg-nyme-violet/10'  },
