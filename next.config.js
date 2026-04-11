@@ -1,14 +1,16 @@
 // next.config.js
 // CORRECTIONS AUDIT :
-//   1. images.domains vide → ajout des domaines utilisés (Supabase, Google, GitHub)
-//   2. Ajout Content Security Policy (CSP) pour limiter les vecteurs XSS
-//   3. Passage à remotePatterns (API moderne Next.js 14) en plus de domains
+//   [FIX-A] remotePatterns étendu — unpkg.com ajouté (icônes Leaflet)
+//   [FIX-B] CSP img-src — *.tile.openstreetmap.org + unpkg.com ajoutés (tuiles + icônes Leaflet)
+//   [FIX-C] CSP script-src — unpkg.com ajouté (Leaflet depuis unpkg)
+//   [FIX-D] CSP font-src — data: ajouté (Leaflet inline fonts)
+//   [FIX-E] CSP connect-src — nominatim.openstreetmap.org ajouté (géocodage fallback)
+//   [FIX-F] domains maintenu pour rétrocompat mais remotePatterns reste la source de vérité
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // ── Images distantes autorisées ──────────────────────────────────
-  // CORRECTION AUDIT : domains: [] vide → ajout des domaines nécessaires
   images: {
-    // remotePatterns est la méthode recommandée Next.js 14+
     remotePatterns: [
       {
         protocol: 'https',
@@ -23,12 +25,18 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'avatars.githubusercontent.com',
       },
+      // [FIX-A] unpkg.com — icônes Leaflet (marker-icon.png, marker-shadow.png)
+      {
+        protocol: 'https',
+        hostname: 'unpkg.com',
+      },
     ],
-    // domains maintenu pour compatibilité (déprécié Next.js 14 mais fonctionnel)
+    // Maintenu pour compatibilité (déprécié Next.js 14 mais fonctionnel)
     domains: [
       'supabase.co',
       'lh3.googleusercontent.com',
       'avatars.githubusercontent.com',
+      'unpkg.com',
     ],
   },
 
@@ -45,32 +53,115 @@ const nextConfig = {
           // Politique Referer
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           // Permissions des API navigateur
-          { key: 'Permissions-Policy', value: 'geolocation=(self), camera=(self), microphone=(self)' },
+          {
+            key: 'Permissions-Policy',
+            value: 'geolocation=(self), camera=(self), microphone=(self)',
+          },
           // HSTS — HTTPS forcé 1 an
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains; preload',
+          },
+
           // ── CONTENT SECURITY POLICY ──────────────────────────────
-          // CORRECTION AUDIT : ajout CSP pour limiter les vecteurs XSS
           {
             key: 'Content-Security-Policy',
             value: [
-              // Scripts : self + CDN Tailwind + identifiants inline Next.js
               "default-src 'self'",
-              // Scripts autorisés : self + inline Next.js hydration + CDN
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://maps.googleapis.com https://api.mapbox.com",
-              // Styles : self + inline + CDN
-              "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://fonts.googleapis.com https://api.mapbox.com",
-              // Images : self + data URIs + Supabase + Google + CDN
-              "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://*.googleapis.com https://*.openstreetmap.org https://tiles.mapbox.com https://api.mapbox.com https://cdn.jsdelivr.net",
-              // Fonts : self + Google + CDN
-              "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-              // Connexions API : self + Supabase + providers paiement + maps
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.duniapay.net https://api.flutterwave.com https://api.orange.com https://api.brevo.com https://api.resend.com https://maps.googleapis.com https://api.mapbox.com https://router.project-osrm.org",
-              // Frames : none (sécurité anti-clickjacking)
+
+              // Scripts : self + inline Next.js hydration + CDN + Leaflet (unpkg)
+              [
+                "script-src",
+                "'self'",
+                "'unsafe-inline'",
+                "'unsafe-eval'",
+                "https://cdn.tailwindcss.com",
+                "https://cdn.jsdelivr.net",
+                "https://maps.googleapis.com",
+                "https://api.mapbox.com",
+                // [FIX-C] unpkg requis pour charger Leaflet si importé via CDN
+                "https://unpkg.com",
+              ].join(' '),
+
+              // Styles
+              [
+                "style-src",
+                "'self'",
+                "'unsafe-inline'",
+                "https://cdn.tailwindcss.com",
+                "https://cdn.jsdelivr.net",
+                "https://fonts.googleapis.com",
+                "https://api.mapbox.com",
+                "https://unpkg.com",
+              ].join(' '),
+
+              // Images : self + data + blob + fournisseurs + tuiles carto
+              [
+                "img-src",
+                "'self'",
+                "data:",
+                "blob:",
+                "https://*.supabase.co",
+                "https://lh3.googleusercontent.com",
+                "https://avatars.githubusercontent.com",
+                "https://*.googleapis.com",
+                // [FIX-B] Tuiles OpenStreetMap (Leaflet)
+                "https://*.tile.openstreetmap.org",
+                "https://*.openstreetmap.org",
+                // [FIX-B] Icônes Leaflet via unpkg
+                "https://unpkg.com",
+                // Mapbox tiles
+                "https://tiles.mapbox.com",
+                "https://api.mapbox.com",
+                "https://*.mapbox.com",
+                "https://cdn.jsdelivr.net",
+              ].join(' '),
+
+              // Fonts
+              [
+                "font-src",
+                "'self'",
+                // [FIX-D] data: pour les fonts inline éventuelles
+                "data:",
+                "https://fonts.gstatic.com",
+                "https://cdn.jsdelivr.net",
+                "https://unpkg.com",
+              ].join(' '),
+
+              // Connexions API : self + Supabase + paiement + maps + géocodage
+              [
+                "connect-src",
+                "'self'",
+                "https://*.supabase.co",
+                "wss://*.supabase.co",
+                // Paiement
+                "https://api.duniapay.net",
+                "https://api.flutterwave.com",
+                "https://api.orange.com",
+                // Emails
+                "https://api.brevo.com",
+                "https://api.resend.com",
+                // Cartographie
+                "https://maps.googleapis.com",
+                "https://api.mapbox.com",
+                "https://*.mapbox.com",
+                // OSRM routing
+                "https://router.project-osrm.org",
+                // [FIX-E] Nominatim — géocodage OSM fallback
+                "https://nominatim.openstreetmap.org",
+                // Tuiles OSM (fetch depuis Leaflet)
+                "https://*.tile.openstreetmap.org",
+              ].join(' '),
+
+              // Frames : aucune (anti-clickjacking)
               "frame-src 'none'",
-              // Workers (Next.js service worker)
+
+              // Workers (Next.js service worker + Leaflet web workers)
               "worker-src 'self' blob:",
+
               // Médias
               "media-src 'self' blob: https://*.supabase.co",
+
               // Manifeste PWA
               "manifest-src 'self'",
             ].join('; '),
