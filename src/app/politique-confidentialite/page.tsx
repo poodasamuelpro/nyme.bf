@@ -46,9 +46,9 @@ Téléphone : +226 77 98 02 64`
 **2.3 Données spécifiques aux coursiers**
 
 Dans le cadre du processus de vérification obligatoire avant toute activité :
-• Scan recto/verso de la pièce d'identité (Carte Nationale d'Identité ou passeport)
-• Scan du permis de conduire en cours de validité
-• Scan de la carte grise du véhicule
+• Scan recto/verso de la pièce d'identité (Carte Nationale d'Identité ou passeport) — obligatoire
+• Scan du permis de conduire en cours de validité — facultatif selon le type de véhicule
+• Scan de la carte grise du véhicule — obligatoire
 • Informations sur le véhicule (type, marque, couleur, numéro d'immatriculation)
 • Numéro WhatsApp professionnel
 
