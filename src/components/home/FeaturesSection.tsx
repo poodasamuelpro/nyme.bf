@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 const features = [
-  { emoji: '💬', title: 'Négociation de prix',     desc: "Proposez votre prix, les coursiers contre-proposent. Vous choisissez l'offre qui vous convient — comme InDrive mais pour les colis.", color: 'from-nyme-orange/20 to-nyme-orange/5',        border: 'border-nyme-orange/35' },
-  { emoji: '📍', title: 'Suivi GPS en temps réel', desc: 'Suivez votre coursier sur une carte interactive mise à jour toutes les 3 secondes. Partagez le lien de suivi avec le destinataire.',  color: 'from-nyme-blue-light/20 to-nyme-blue-light/5', border: 'border-nyme-blue-light/35' },
-  { emoji: '🛡️', title: 'Coursiers vérifiés',      desc: "CNI, permis de conduire, carte grise et photo de véhicule. Aucun coursier ne peut travailler sans validation admin complète.",        color: 'from-green-500/20 to-green-500/5',             border: 'border-green-500/35' },
-  { emoji: '📦', title: 'Livraison pour un tiers', desc: "Envoyez un colis à quelqu'un d'autre. Le destinataire reçoit un SMS avec lien de suivi et est notifié à chaque étape.",              color: 'from-purple-500/20 to-purple-500/5',           border: 'border-purple-500/35' },
-  { emoji: '⏰', title: 'Course programmée',        desc: "Planifiez vos livraisons jusqu'à 15 jours à l'avance. L'app trouve automatiquement un coursier disponible 1h avant.",               color: 'from-yellow-500/20 to-yellow-500/5',           border: 'border-yellow-500/35' },
-  { emoji: '📞', title: 'Chat & appels intégrés',  desc: "Communiquez directement avec votre coursier via le chat ou par téléphone, sans jamais quitter l'application.",                       color: 'from-nyme-red/20 to-nyme-red/5',              border: 'border-nyme-red/35' },
+  { emoji: '💬', title: 'Négociation de prix',       desc: "Proposez votre prix, les coursiers répondent avec leurs offres. Vous sélectionnez celle qui vous convient — un système juste et transparent pour tous.", color: 'from-nyme-orange/20 to-nyme-orange/5',        border: 'border-nyme-orange/35' },
+  { emoji: '📍', title: 'Suivi GPS en temps réel',   desc: 'Visualisez la position exacte de votre coursier sur une carte interactive, mise à jour en continu. Partagez le lien de suivi directement avec le destinataire.',  color: 'from-nyme-blue-light/20 to-nyme-blue-light/5', border: 'border-nyme-blue-light/35' },
+  { emoji: '🛡️', title: 'Coursiers rigoureusement vérifiés', desc: "Chaque coursier passe par une vérification manuelle : pièce d'identité, permis de conduire et carte grise. Aucune mission n'est possible sans validation de l'équipe NYME.", color: 'from-green-500/20 to-green-500/5',             border: 'border-green-500/35' },
+  { emoji: '📦', title: 'Livraison pour un destinataire', desc: "Envoyez un colis à quelqu'un d'autre facilement. Le destinataire reçoit un lien de suivi sécurisé et est notifié à chaque étape de la livraison.",              color: 'from-purple-500/20 to-purple-500/5',           border: 'border-purple-500/35' },
+  { emoji: '⏰', title: 'Course programmée',           desc: "Planifiez vos livraisons jusqu'à 15 jours à l'avance. NYME trouve automatiquement un coursier disponible environ 1 heure avant votre créneau choisi.",              color: 'from-yellow-500/20 to-yellow-500/5',           border: 'border-yellow-500/35' },
+  { emoji: '📞', title: 'Chat & appels intégrés',     desc: "Communiquez directement avec votre coursier via la messagerie ou par appel, sans jamais quitter l'application — vos numéros restent privés.",                       color: 'from-nyme-red/20 to-nyme-red/5',              border: 'border-nyme-red/35' },
 ]
 
 export default function FeaturesSection() {
@@ -47,7 +47,7 @@ export default function FeaturesSection() {
             Tout ce dont vous avez besoin
           </h2>
           <p className="text-white/70 font-body text-base sm:text-lg max-w-2xl mx-auto px-4">
-            NYME repense la livraison pour l'Afrique de l'Ouest. Conçu pour Ouagadougou, adapté à vos réalités.
+            NYME repense la livraison pour l'Afrique de l'Ouest. Une plateforme complète, conçue pour les réalités de Ouagadougou.
           </p>
         </div>
 
